@@ -1,0 +1,816 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:prompt-regression:schema:diagnosis-report:v1alpha1",
+  "title": "Prompt Regression Diagnosis Report v1alpha1",
+  "description": "Evidence-linked output of the deterministic prompt regression diagnosis pipeline.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report_id",
+    "bundle_id",
+    "input_bundle_hash",
+    "generated_at",
+    "pipeline",
+    "baseline_prompt_version_id",
+    "candidate_prompt_version_id",
+    "regression",
+    "prompt_changes",
+    "failure_clusters",
+    "hypotheses",
+    "ablation_plans",
+    "ablation_variants",
+    "ablation_runs",
+    "evidence",
+    "recommendations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "prompt-regression.report/v1alpha1",
+      "description": "Discriminator for this exact report contract."
+    },
+    "report_id": {
+      "$ref": "#/$defs/Id",
+      "description": "Stable identifier for this immutable report."
+    },
+    "bundle_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "input_bundle_hash": {
+      "$ref": "#/$defs/Sha256",
+      "description": "SHA-256 of the canonical input bundle consumed by the pipeline."
+    },
+    "generated_at": {
+      "$ref": "#/$defs/Timestamp"
+    },
+    "pipeline": {
+      "$ref": "#/$defs/Pipeline"
+    },
+    "baseline_prompt_version_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "candidate_prompt_version_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "regression": {
+      "$ref": "#/$defs/Regression"
+    },
+    "prompt_changes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PromptChange"
+      }
+    },
+    "failure_clusters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FailureCluster"
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RootCauseHypothesis"
+      }
+    },
+    "ablation_plans": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AblationPlan"
+      }
+    },
+    "ablation_variants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Variant"
+      }
+    },
+    "ablation_runs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Run"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 10000
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\s]+$",
+      "description": "Opaque stable identifier; consumers must not infer meaning from its spelling."
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hexadecimal SHA-256 digest of canonical JSON."
+    },
+    "JsonValue": {
+      "description": "Any value representable by JSON; NaN and infinity are not JSON values.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      ]
+    },
+    "JsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      }
+    },
+    "MetricResult": {
+      "title": "MetricResult",
+      "type": "object",
+      "required": ["metric_key", "score"],
+      "properties": {
+        "metric_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Normalized score in the closed interval [0, 1]; v1alpha1 treats higher values as better."
+        },
+        "passed": {
+          "type": ["boolean", "null"]
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "maxLength": 10000
+        }
+      },
+      "additionalProperties": false
+    },
+    "EvalResult": {
+      "title": "EvalResult",
+      "type": "object",
+      "required": ["id", "test_case_id", "output_text", "passed", "metrics"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "test_case_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "output_text": {
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/MetricResult"
+          }
+        },
+        "metadata": {
+          "$ref": "#/$defs/JsonObject",
+          "default": {},
+          "description": "Integration-owned extension data; it must not replace modeled contract fields."
+        }
+      },
+      "additionalProperties": false
+    },
+    "EvalRun": {
+      "title": "EvalRun",
+      "type": "object",
+      "required": [
+        "id",
+        "prompt_version_id",
+        "dataset_id",
+        "results",
+        "model_snapshot",
+        "evaluator_snapshot"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "prompt_version_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "dataset_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "results": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/EvalResult"
+          }
+        },
+        "model_snapshot": {
+          "$ref": "#/$defs/JsonObject",
+          "type": "object",
+          "minProperties": 1
+        },
+        "evaluator_snapshot": {
+          "$ref": "#/$defs/JsonObject",
+          "type": "object",
+          "minProperties": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "RegressionCase": {
+      "title": "RegressionCase",
+      "type": "object",
+      "required": [
+        "id",
+        "test_case_id",
+        "kind",
+        "baseline_passed",
+        "candidate_passed",
+        "metric_deltas",
+        "primary_metric"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "test_case_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "enum": ["hard", "metric", "hard_and_metric"]
+        },
+        "baseline_passed": {
+          "type": "boolean"
+        },
+        "candidate_passed": {
+          "type": "boolean"
+        },
+        "metric_deltas": {
+          "type": "object",
+          "description": "Metric key to candidate-minus-baseline score delta.",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "primary_metric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      },
+      "additionalProperties": false
+    },
+    "Regression": {
+      "title": "Regression",
+      "type": "object",
+      "required": ["id", "baseline_eval_run_id", "candidate_eval_run_id", "config_hash", "cases"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseline_eval_run_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "candidate_eval_run_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "config_hash": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RegressionCase"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PromptChange": {
+      "title": "PromptChange",
+      "type": "object",
+      "required": [
+        "id",
+        "segment_id",
+        "change_type",
+        "old_content",
+        "new_content",
+        "old_ordinal",
+        "new_ordinal",
+        "semantic_tags",
+        "semantic_summary"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "segment_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "change_type": {
+          "enum": ["added", "removed", "rewritten"]
+        },
+        "old_content": {
+          "type": ["string", "null"],
+          "maxLength": 100000
+        },
+        "new_content": {
+          "type": ["string", "null"],
+          "maxLength": 100000
+        },
+        "old_ordinal": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "new_ordinal": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "semantic_tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "uniqueItems": true
+        },
+        "semantic_summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "change_type": {
+                "const": "added"
+              }
+            },
+            "required": ["change_type"]
+          },
+          "then": {
+            "properties": {
+              "old_content": {
+                "type": "null"
+              },
+              "old_ordinal": {
+                "type": "null"
+              },
+              "new_content": {
+                "type": "string",
+                "minLength": 1
+              },
+              "new_ordinal": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "change_type": {
+                "const": "removed"
+              }
+            },
+            "required": ["change_type"]
+          },
+          "then": {
+            "properties": {
+              "old_content": {
+                "type": "string",
+                "minLength": 1
+              },
+              "old_ordinal": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "new_content": {
+                "type": "null"
+              },
+              "new_ordinal": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "change_type": {
+                "const": "rewritten"
+              }
+            },
+            "required": ["change_type"]
+          },
+          "then": {
+            "properties": {
+              "old_content": {
+                "type": "string",
+                "minLength": 1
+              },
+              "old_ordinal": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "new_content": {
+                "type": "string",
+                "minLength": 1
+              },
+              "new_ordinal": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "FailureCluster": {
+      "title": "FailureCluster",
+      "type": "object",
+      "required": [
+        "id",
+        "key",
+        "title",
+        "primary_metric",
+        "regression_case_ids",
+        "test_case_ids",
+        "algorithm",
+        "algorithm_version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "primary_metric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "regression_case_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "test_case_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "algorithm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "algorithm_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      },
+      "additionalProperties": false
+    },
+    "RootCauseHypothesis": {
+      "title": "RootCauseHypothesis",
+      "type": "object",
+      "required": [
+        "id",
+        "cluster_id",
+        "prompt_change_ids",
+        "mechanism",
+        "expected_if_reverted",
+        "prior_confidence",
+        "verification_status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "cluster_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "prompt_change_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "expected_if_reverted": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "prior_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "verification_status": {
+          "enum": ["hypothesized", "supported", "rejected", "inconclusive"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Variant": {
+      "title": "Variant",
+      "description": "One immutable prompt ablation variant.",
+      "type": "object",
+      "required": [
+        "id",
+        "hypothesis_id",
+        "base_prompt_version_id",
+        "strategy",
+        "reverted_segment_ids",
+        "prompt_content_hash"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "hypothesis_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "base_prompt_version_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "strategy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "reverted_segment_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "prompt_content_hash": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AblationPlan": {
+      "title": "AblationPlan",
+      "type": "object",
+      "required": [
+        "id",
+        "hypothesis_id",
+        "strategy",
+        "variant_ids",
+        "target_test_case_ids",
+        "control_test_case_ids",
+        "config_hash"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "hypothesis_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "strategy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "variant_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "target_test_case_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "control_test_case_ids": {
+          "$ref": "#/$defs/IdSetAllowEmpty"
+        },
+        "config_hash": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Run": {
+      "title": "Run",
+      "description": "One executed ablation variant and its full evaluation evidence.",
+      "type": "object",
+      "required": ["id", "plan_id", "variant_id", "eval_run", "runner", "runner_version"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "variant_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "eval_run": {
+          "$ref": "#/$defs/EvalRun"
+        },
+        "runner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "runner_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      },
+      "additionalProperties": false
+    },
+    "Evidence": {
+      "title": "Evidence",
+      "type": "object",
+      "required": [
+        "id",
+        "hypothesis_id",
+        "cluster_id",
+        "prompt_change_ids",
+        "ablation_run_id",
+        "metric_key",
+        "stance",
+        "resulting_status",
+        "target_case_ids",
+        "control_case_ids",
+        "target_mean_delta",
+        "control_mean_delta",
+        "max_observed_control_damage",
+        "recovery_ratio",
+        "target_sample_size",
+        "control_sample_size",
+        "unrecovered_hard_targets",
+        "new_control_failures",
+        "rationale"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "hypothesis_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "cluster_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "prompt_change_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "ablation_run_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "metric_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "stance": {
+          "enum": ["supporting", "contradicting", "neutral"]
+        },
+        "resulting_status": {
+          "enum": ["hypothesized", "supported", "rejected", "inconclusive"]
+        },
+        "target_case_ids": {
+          "$ref": "#/$defs/IdSet"
+        },
+        "control_case_ids": {
+          "$ref": "#/$defs/IdSetAllowEmpty"
+        },
+        "target_mean_delta": {
+          "type": "number"
+        },
+        "control_mean_delta": {
+          "type": "number"
+        },
+        "max_observed_control_damage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Largest candidate-to-ablation score decrease observed on any control case; unlike the mean, improvements on other controls cannot cancel it."
+        },
+        "recovery_ratio": {
+          "type": ["number", "null"],
+          "description": "Observed recovery relative to the original regression gap. It may be below 0 when the ablation is worse, above 1 when it improves beyond baseline, or null when no ratio can be computed."
+        },
+        "target_sample_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "control_sample_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unrecovered_hard_targets": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Target cases that passed at baseline, failed at candidate, and still fail after ablation."
+        },
+        "new_control_failures": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Control cases that passed for the candidate but fail after ablation."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        }
+      },
+      "additionalProperties": false
+    },
+    "Pipeline": {
+      "title": "Pipeline",
+      "type": "object",
+      "required": ["engine", "engine_version", "config_hash"],
+      "properties": {
+        "engine": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "engine_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "config_hash": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "IdSet": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/Id"
+      }
+    },
+    "IdSetAllowEmpty": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/Id"
+      }
+    }
+  }
+}

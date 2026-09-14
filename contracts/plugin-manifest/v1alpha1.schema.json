@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:prompt-regression:schema:plugin-manifest:v1alpha1",
+  "title": "Prompt Regression Plugin Manifest v1alpha1",
+  "description": "Data-only declaration for one explicitly selected Prompt Regression plugin.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plugin_id",
+    "name",
+    "version",
+    "core_compatibility",
+    "entry_points"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "prompt-regression/plugin-manifest/v1alpha1"
+    },
+    "plugin_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "$ref": "#/$defs/Version"
+    },
+    "description": {
+      "type": "string"
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "core_compatibility": {
+      "type": "object",
+      "required": ["minimum", "maximum_exclusive"],
+      "properties": {
+        "minimum": {
+          "$ref": "#/$defs/Version"
+        },
+        "maximum_exclusive": {
+          "$ref": "#/$defs/Version"
+        }
+      },
+      "additionalProperties": false
+    },
+    "entry_points": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 11,
+      "items": {
+        "type": "object",
+        "required": ["kind", "target"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "EvalImporter",
+              "TraceImporter",
+              "ProviderAdapter",
+              "EvaluatorAdapter",
+              "FailureClusterer",
+              "PromptParser",
+              "SemanticDiffStrategy",
+              "RootCauseStrategy",
+              "AblationStrategy",
+              "EvidenceScorer",
+              "Reporter"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:\\.(0|[1-9][0-9]*))?(?:(a|b|rc)(0|[1-9][0-9]*))?$"
+    }
+  }
+}

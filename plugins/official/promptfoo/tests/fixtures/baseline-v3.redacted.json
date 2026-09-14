@@ -1,0 +1,167 @@
+{
+  "evalId": "eval-redacted-baseline",
+  "results": {
+    "version": 3,
+    "timestamp": "2026-09-14T08:00:00Z",
+    "prompts": [
+      {
+        "id": "promptfoo-redacted-baseline",
+        "label": "baseline-redacted",
+        "raw": "[REDACTED BASELINE PROMPT]",
+        "provider": "openai:chat:redacted-model"
+      }
+    ],
+    "stats": {
+      "successes": 3,
+      "failures": 0,
+      "errors": 0,
+      "tokenUsage": { "total": 0, "prompt": 0, "completion": 0, "cached": 0 }
+    },
+    "results": [
+      {
+        "id": "result-redacted-b-0",
+        "description": "missing customer tier",
+        "promptIdx": 0,
+        "testIdx": 0,
+        "testCase": {
+          "description": "missing customer tier",
+          "vars": { "question": "[REDACTED CASE 0]" },
+          "assert": [
+            { "type": "llm-rubric", "metric": "groundedness", "value": "[REDACTED RUBRIC]" },
+            { "type": "llm-rubric", "metric": "helpfulness", "value": "[REDACTED RUBRIC]" }
+          ],
+          "metadata": { "suite_case": "redacted-0" }
+        },
+        "promptId": "promptfoo-redacted-baseline",
+        "provider": { "id": "openai:chat:redacted-model", "label": "Redacted provider" },
+        "prompt": { "raw": "[REDACTED BASELINE PROMPT]", "label": "baseline-redacted" },
+        "vars": { "question": "[REDACTED CASE 0]" },
+        "response": { "output": "Please provide the missing customer tier." },
+        "error": null,
+        "failureReason": 0,
+        "success": true,
+        "score": 0.9,
+        "gradingResult": {
+          "pass": true,
+          "score": 0.9,
+          "reason": "All assertions passed.",
+          "namedScores": { "groundedness": 0.95, "helpfulness": 0.85 },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 0.95,
+              "reason": "The answer does not invent the missing value.",
+              "assertion": { "type": "llm-rubric", "metric": "groundedness" }
+            },
+            {
+              "pass": true,
+              "score": 0.85,
+              "reason": "The clarification request is actionable.",
+              "assertion": { "type": "llm-rubric", "metric": "helpfulness" }
+            }
+          ]
+        },
+        "namedScores": { "groundedness": 0.95, "helpfulness": 0.85 },
+        "metadata": { "fixture": "redacted" },
+        "traceId": "trace-redacted-b-0",
+        "evaluationId": "evaluation-redacted-b"
+      },
+      {
+        "id": "result-redacted-b-1",
+        "description": "missing destination",
+        "promptIdx": 0,
+        "testIdx": 1,
+        "testCase": {
+          "description": "missing destination",
+          "vars": { "question": "[REDACTED CASE 1]" },
+          "assert": [
+            { "type": "llm-rubric", "metric": "groundedness", "value": "[REDACTED RUBRIC]" },
+            { "type": "llm-rubric", "metric": "helpfulness", "value": "[REDACTED RUBRIC]" }
+          ],
+          "metadata": { "suite_case": "redacted-1" }
+        },
+        "promptId": "promptfoo-redacted-baseline",
+        "provider": { "id": "openai:chat:redacted-model", "label": "Redacted provider" },
+        "prompt": { "raw": "[REDACTED BASELINE PROMPT]", "label": "baseline-redacted" },
+        "vars": { "question": "[REDACTED CASE 1]" },
+        "response": { "output": "Which destination should I use?" },
+        "error": null,
+        "failureReason": 0,
+        "success": true,
+        "score": 0.91,
+        "gradingResult": {
+          "pass": true,
+          "score": 0.91,
+          "reason": "All assertions passed.",
+          "namedScores": { "groundedness": 0.94, "helpfulness": 0.88 },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 0.94,
+              "reason": "No destination was assumed.",
+              "assertion": { "type": "llm-rubric", "metric": "groundedness" }
+            },
+            {
+              "pass": true,
+              "score": 0.88,
+              "reason": "The question requests the required field.",
+              "assertion": { "type": "llm-rubric", "metric": "helpfulness" }
+            }
+          ]
+        },
+        "namedScores": { "groundedness": 0.94, "helpfulness": 0.88 },
+        "metadata": { "fixture": "redacted" },
+        "traceId": "trace-redacted-b-1",
+        "evaluationId": "evaluation-redacted-b"
+      },
+      {
+        "id": "result-redacted-b-2",
+        "description": "fully specified request",
+        "promptIdx": 0,
+        "testIdx": 2,
+        "testCase": {
+          "description": "fully specified request",
+          "vars": { "question": "[REDACTED CONTROL CASE]" },
+          "assert": [
+            { "type": "llm-rubric", "metric": "groundedness", "value": "[REDACTED RUBRIC]" },
+            { "type": "llm-rubric", "metric": "helpfulness", "value": "[REDACTED RUBRIC]" }
+          ],
+          "metadata": { "suite_case": "redacted-control" }
+        },
+        "promptId": "promptfoo-redacted-baseline",
+        "provider": { "id": "openai:chat:redacted-model", "label": "Redacted provider" },
+        "prompt": { "raw": "[REDACTED BASELINE PROMPT]", "label": "baseline-redacted" },
+        "vars": { "question": "[REDACTED CONTROL CASE]" },
+        "response": { "output": "[REDACTED VALID ANSWER]" },
+        "error": null,
+        "failureReason": 0,
+        "success": true,
+        "score": 0.92,
+        "gradingResult": {
+          "pass": true,
+          "score": 0.92,
+          "reason": "All assertions passed.",
+          "namedScores": { "groundedness": 0.93, "helpfulness": 0.91 },
+          "componentResults": [
+            {
+              "pass": true,
+              "score": 0.93,
+              "reason": "The answer uses only supplied facts.",
+              "assertion": { "type": "llm-rubric", "metric": "groundedness" }
+            },
+            {
+              "pass": true,
+              "score": 0.91,
+              "reason": "The request is answered directly.",
+              "assertion": { "type": "llm-rubric", "metric": "helpfulness" }
+            }
+          ]
+        },
+        "namedScores": { "groundedness": 0.93, "helpfulness": 0.91 },
+        "metadata": { "fixture": "redacted" },
+        "traceId": "trace-redacted-b-2",
+        "evaluationId": "evaluation-redacted-b"
+      }
+    ]
+  }
+}

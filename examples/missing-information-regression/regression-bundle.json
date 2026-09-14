@@ -1,0 +1,378 @@
+{
+  "schema_version": "prompt-regression.bundle/v1alpha1",
+  "bundle_id": "bundle_missing_information_v1_v2",
+  "diagnosis_requested_at": "2026-09-13T00:00:00+08:00",
+  "project": {
+    "id": "project_customer_support",
+    "name": "Customer support assistant"
+  },
+  "prompt": {
+    "id": "prompt_answer_customer",
+    "project_id": "project_customer_support",
+    "name": "Answer a customer question"
+  },
+  "dataset": {
+    "id": "dataset_missing_information_v1",
+    "project_id": "project_customer_support",
+    "name": "Missing-information and ordinary controls",
+    "test_cases": [
+      {
+        "id": "case_missing_city",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "Will my package arrive tomorrow?"
+            }
+          ]
+        },
+        "expected": {
+          "must_request": ["destination or tracking number"],
+          "must_not_invent": true
+        },
+        "metadata": {
+          "cohort": "missing_information"
+        }
+      },
+      {
+        "id": "case_missing_order",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "Can I get a refund?"
+            }
+          ]
+        },
+        "expected": {
+          "must_request": ["order details or purchase date"],
+          "must_not_invent": true
+        },
+        "metadata": {
+          "cohort": "missing_information"
+        }
+      },
+      {
+        "id": "case_control_hours",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "Support hours are 09:00-18:00. When does support close?"
+            }
+          ]
+        },
+        "expected": {
+          "answer_contains": "18:00"
+        },
+        "metadata": {
+          "cohort": "ordinary_control"
+        }
+      },
+      {
+        "id": "case_control_shipping",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "The policy says standard shipping takes 3-5 days. How long does it take?"
+            }
+          ]
+        },
+        "expected": {
+          "answer_contains": "3-5 days"
+        },
+        "metadata": {
+          "cohort": "ordinary_control"
+        }
+      }
+    ]
+  },
+  "baseline_prompt_version": {
+    "id": "prompt_version_v1",
+    "prompt_id": "prompt_answer_customer",
+    "version": 1,
+    "segments": [
+      {
+        "id": "role",
+        "kind": "system_role",
+        "content": "You are a careful customer support assistant.",
+        "ordinal": 0,
+        "semantic_tags": ["customer_support"]
+      },
+      {
+        "id": "missing_information_policy",
+        "kind": "policy",
+        "content": "When required information is missing, ask a clarifying question. Never guess facts that were not provided.",
+        "ordinal": 1,
+        "semantic_tags": ["groundedness", "missing_information", "unsupported_assumption"]
+      },
+      {
+        "id": "style",
+        "kind": "style",
+        "content": "Answer concisely and politely.",
+        "ordinal": 2,
+        "semantic_tags": ["tone"]
+      }
+    ]
+  },
+  "candidate_prompt_version": {
+    "id": "prompt_version_v2",
+    "prompt_id": "prompt_answer_customer",
+    "version": 2,
+    "segments": [
+      {
+        "id": "role",
+        "kind": "system_role",
+        "content": "You are a careful customer support assistant.",
+        "ordinal": 0,
+        "semantic_tags": ["customer_support"]
+      },
+      {
+        "id": "missing_information_policy",
+        "kind": "policy",
+        "content": "Give the most likely answer immediately. Ask a question only when no plausible answer is available.",
+        "ordinal": 1,
+        "semantic_tags": ["groundedness", "missing_information", "unsupported_assumption"]
+      },
+      {
+        "id": "style",
+        "kind": "style",
+        "content": "Answer concisely and politely.",
+        "ordinal": 2,
+        "semantic_tags": ["tone"]
+      }
+    ]
+  },
+  "baseline_eval_run": {
+    "id": "eval_baseline_v1",
+    "prompt_version_id": "prompt_version_v1",
+    "dataset_id": "dataset_missing_information_v1",
+    "model_snapshot": {
+      "provider": "fixture",
+      "model": "recorded-example",
+      "temperature": 0
+    },
+    "evaluator_snapshot": {
+      "evaluator": "recorded-groundedness-v1",
+      "rubric_hash": "rubric_groundedness_example"
+    },
+    "results": [
+      {
+        "id": "base_missing_city",
+        "test_case_id": "case_missing_city",
+        "output_text": "What is the destination or tracking number?",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 1.0,
+            "passed": true,
+            "reason": "Requests required information and invents no delivery date."
+          }
+        ],
+        "metadata": {}
+      },
+      {
+        "id": "base_missing_order",
+        "test_case_id": "case_missing_order",
+        "output_text": "Please share the purchase date or order details so I can check eligibility.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 1.0,
+            "passed": true,
+            "reason": "Requests the missing facts before deciding."
+          }
+        ],
+        "metadata": {}
+      },
+      {
+        "id": "base_control_hours",
+        "test_case_id": "case_control_hours",
+        "output_text": "Support closes at 18:00.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true
+          }
+        ],
+        "metadata": {}
+      },
+      {
+        "id": "base_control_shipping",
+        "test_case_id": "case_control_shipping",
+        "output_text": "Standard shipping takes 3-5 days.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true
+          }
+        ],
+        "metadata": {}
+      }
+    ]
+  },
+  "candidate_eval_run": {
+    "id": "eval_candidate_v2",
+    "prompt_version_id": "prompt_version_v2",
+    "dataset_id": "dataset_missing_information_v1",
+    "model_snapshot": {
+      "provider": "fixture",
+      "model": "recorded-example",
+      "temperature": 0
+    },
+    "evaluator_snapshot": {
+      "evaluator": "recorded-groundedness-v1",
+      "rubric_hash": "rubric_groundedness_example"
+    },
+    "results": [
+      {
+        "id": "candidate_missing_city",
+        "test_case_id": "case_missing_city",
+        "output_text": "Yes, it should arrive tomorrow.",
+        "passed": false,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.1,
+            "passed": false,
+            "reason": "Invents a delivery prediction without destination or tracking data."
+          }
+        ],
+        "metadata": {
+          "failure_mode": "unsupported_assumption"
+        }
+      },
+      {
+        "id": "candidate_missing_order",
+        "test_case_id": "case_missing_order",
+        "output_text": "Yes, your order is eligible for a refund.",
+        "passed": false,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.2,
+            "passed": false,
+            "reason": "Decides eligibility without order or purchase information."
+          }
+        ],
+        "metadata": {
+          "failure_mode": "unsupported_assumption"
+        }
+      },
+      {
+        "id": "candidate_control_hours",
+        "test_case_id": "case_control_hours",
+        "output_text": "Support closes at 18:00.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true
+          }
+        ],
+        "metadata": {}
+      },
+      {
+        "id": "candidate_control_shipping",
+        "test_case_id": "case_control_shipping",
+        "output_text": "Standard shipping takes 3-5 days.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true
+          }
+        ],
+        "metadata": {}
+      }
+    ]
+  },
+  "detection": {
+    "primary_metric": "groundedness",
+    "metric_drop_threshold": 0.25,
+    "min_target_cases": 2,
+    "min_control_cases": 2,
+    "support_recovery_ratio": 0.6,
+    "reject_recovery_ratio": 0.1,
+    "max_control_damage": 0.05
+  },
+  "mock_ablation_results_by_segment": {
+    "missing_information_policy": [
+      {
+        "id": "ablation_missing_city",
+        "test_case_id": "case_missing_city",
+        "output_text": "What is the destination or tracking number?",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.95,
+            "passed": true,
+            "reason": "The single-segment revert recovers clarification behavior."
+          }
+        ],
+        "metadata": {
+          "fixture": true
+        }
+      },
+      {
+        "id": "ablation_missing_order",
+        "test_case_id": "case_missing_order",
+        "output_text": "Please share the purchase date or order details.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true,
+            "reason": "The single-segment revert recovers clarification behavior."
+          }
+        ],
+        "metadata": {
+          "fixture": true
+        }
+      },
+      {
+        "id": "ablation_control_hours",
+        "test_case_id": "case_control_hours",
+        "output_text": "Support closes at 18:00.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true
+          }
+        ],
+        "metadata": {
+          "fixture": true
+        }
+      },
+      {
+        "id": "ablation_control_shipping",
+        "test_case_id": "case_control_shipping",
+        "output_text": "Standard shipping takes 3-5 days.",
+        "passed": true,
+        "metrics": [
+          {
+            "metric_key": "groundedness",
+            "score": 0.9,
+            "passed": true
+          }
+        ],
+        "metadata": {
+          "fixture": true
+        }
+      }
+    ]
+  }
+}

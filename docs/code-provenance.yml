@@ -1,0 +1,26 @@
+schema_version: 1
+project_license: Apache-2.0
+last_reviewed: "2026-09-14"
+policy_adr: docs/adr/0006-third-party-code-reuse.md
+
+# One entry per copied or closely adapted source unit is required.
+copied_code: []
+
+# These projects informed design or public wire-format review only; no source,
+# tests, fixtures, generated code, comments, or close translations were copied.
+design_references:
+  - project: Promptfoo
+    repository: https://github.com/promptfoo/promptfoo
+    relationship: conceptual-and-public-wire-format-review-only
+    code_copied: false
+    license_boundary: MIT material may be considered only after revision-and-path verification.
+  - project: Langfuse
+    repository: https://github.com/langfuse/langfuse
+    relationship: conceptual-review-only
+    code_copied: false
+    license_boundary: Only verified MIT paths outside every ee directory are eligible; ee code is excluded.
+  - project: Arize Phoenix
+    repository: https://github.com/Arize-ai/phoenix
+    relationship: protocol-design-reference-only
+    code_copied: false
+    license_boundary: ELv2-governed main-repository code is excluded from the Apache-2.0 core; protocol integration only.

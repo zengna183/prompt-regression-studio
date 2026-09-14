@@ -1,0 +1,28 @@
+{
+  "name": "@prompt-regression/diagnosis-engine",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "A constrained Node.js process adapter for the Prompt Regression Diagnosis Python Core.",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\""
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

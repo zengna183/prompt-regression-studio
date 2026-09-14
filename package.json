@@ -1,0 +1,40 @@
+{
+  "name": "prompt-regression-diagnosis",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "An evidence-backed framework for prompt regression diagnosis and controlled ablation.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "packages:build": "pnpm --filter \"./packages/**\" build",
+    "dev": "pnpm packages:build && pnpm --parallel --filter \"./apps/**\" dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm packages:build && pnpm -r typecheck",
+    "test": "pnpm test:python && pnpm packages:build && pnpm -r test",
+    "test:python": "python scripts/run-python-tests.py",
+    "lint": "pnpm packages:build && pnpm -r lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "contracts:check": "node scripts/validate-contracts.mjs",
+    "smoke:diagnosis-api": "pnpm packages:build && pnpm --filter @ai-chat-eval/api build && node scripts/smoke-diagnosis-api.mjs",
+    "db:generate": "pnpm --filter @ai-chat-eval/db db:generate",
+    "db:check": "pnpm --filter @ai-chat-eval/db db:check",
+    "db:migrate": "pnpm --filter @ai-chat-eval/db db:migrate",
+    "db:seed": "pnpm --filter @ai-chat-eval/db db:seed"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "eslint": "10.10.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.0"
+  }
+}

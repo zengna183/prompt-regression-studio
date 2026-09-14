@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-regression-importer-promptfoo"
+version = "0.1.0a1"
+description = "Strict Promptfoo EvaluateSummaryV3 importer for Prompt Regression Diagnosis"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Prompt Regression Diagnosis contributors" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.12",
+  "Typing :: Typed",
+]
+dependencies = ["prompt-regression-core>=0.1.0a1,<0.2"]
+
+[project.optional-dependencies]
+test = ["prompt-regression-plugin-sdk>=0.1.0a1,<0.2"]
+
+[project.scripts]
+prompt-regression-import-promptfoo = "prompt_regression_importer_promptfoo.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+prompt_regression_importer_promptfoo = ["py.typed"]
+
+[tool.setuptools.data-files]
+"share/prompt-regression/plugins/promptfoo" = [
+  "prompt-regression-plugin.json",
+]

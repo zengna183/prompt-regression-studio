@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-core:
+    name: Python core and official plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile first-party Python packages
+        run: >-
+          python -m compileall -q
+          packages/python/core/src packages/python/core/tests
+          packages/python/plugin-sdk/src packages/python/plugin-sdk/tests
+          plugins/official/promptfoo/src plugins/official/promptfoo/tests
+          scripts/run-python-tests.py
+      - name: Run Python contract and diagnosis tests
+        run: python scripts/run-python-tests.py
+      - name: Build the Python wheels
+        run: |
+          python -m pip wheel --no-deps --wheel-dir dist/python packages/python/core
+          python -m pip wheel --no-deps --wheel-dir dist/python packages/python/plugin-sdk
+          python -m pip wheel --no-deps --wheel-dir dist/python plugins/official/promptfoo
+      - name: Validate and diagnose the golden example
+        env:
+          PYTHONPATH: packages/python/core/src
+        run: |
+          python -m prompt_regression_core validate examples/missing-information-regression/regression-bundle.json
+          python -m prompt_regression_core diagnose examples/missing-information-regression/regression-bundle.json --out /tmp/diagnosis-report.json --require-supported-hypothesis
+
+  verify:
+    name: TypeScript foundation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - name: Produce report for cross-language contract validation
+        env:
+          PYTHONPATH: packages/python/core/src
+        run: python -m prompt_regression_core diagnose examples/missing-information-regression/regression-bundle.json --out /tmp/diagnosis-report.json
+      - run: pnpm contracts:check -- /tmp/diagnosis-report.json
+      - name: Validate database migration metadata
+        env:
+          DATABASE_URL: postgres://eval:eval@localhost:5432/eval_studio
+        run: pnpm db:check
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Smoke test HTTP API through the real Python Core
+        run: pnpm smoke:diagnosis-api

@@ -1,0 +1,17 @@
+{
+  "schema_version": "prompt-regression/plugin-manifest/v1alpha1",
+  "plugin_id": "official.promptfoo-importer",
+  "name": "Official Promptfoo v3 Importer",
+  "version": "0.1.0a1",
+  "description": "Strictly imports paired Promptfoo EvaluateSummaryV3 exports into a canonical regression bundle.",
+  "core_compatibility": {
+    "minimum": "0.1.0a1",
+    "maximum_exclusive": "0.2.0"
+  },
+  "entry_points": [
+    {
+      "kind": "EvalImporter",
+      "target": "prompt_regression_importer_promptfoo:plugin"
+    }
+  ]
+}
