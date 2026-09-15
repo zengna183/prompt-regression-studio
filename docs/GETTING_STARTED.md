@@ -9,6 +9,8 @@
 - Python 3.12 或更高版本：运行诊断核心；
 - Docker Desktop：本地启动 PostgreSQL（数据库）和 Redis（任务队列）。
 
+Windows 第一次安装 Docker 前，需要以管理员身份运行 `pnpm windows:enable-wsl` 启用 WSL 和虚拟机平台，然后按系统提示重启。这项操作只需执行一次。
+
 如果只想体验命令行诊断，不需要 Docker、Node.js 或 Redis，直接按照根目录 README 的“五分钟运行第一条诊断链路”操作即可。
 
 ## 2. 用 VS Code 打开项目
