@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file. The format 
 - Durable PostgreSQL diagnosis runs, a versioned initial SQL migration, safe terminal failures, history/detail APIs, and browser report history.
 - A repeatable Windows bootstrap and environment check, project-scoped Python environment, and shared VS Code tasks/settings for first-time contributors.
 - Cross-platform Python executable discovery for the root test command and HTTP smoke test, preferring the project virtual environment when present.
+- Automatic Docker CLI discovery for Microsoft Store per-user installs and conventional all-user installs on Windows.
 
 ### Changed
 

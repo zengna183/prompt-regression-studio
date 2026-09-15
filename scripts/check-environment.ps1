@@ -46,9 +46,28 @@ if (Test-Path -LiteralPath $venvPython) {
   $failures.Add("Run 'pnpm setup:local' to create the project Python environment.")
 }
 
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-  Write-Host "[ready]   $(docker --version)"
-  docker info *> $null
+function Resolve-DockerCommand {
+  $pathCommand = Get-Command docker -ErrorAction SilentlyContinue
+  if ($pathCommand) {
+    return $pathCommand.Source
+  }
+
+  $candidates = @(
+    (Join-Path $env:LOCALAPPDATA "Programs\DockerDesktop\resources\bin\docker.exe"),
+    "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+  )
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) {
+      return $candidate
+    }
+  }
+  return $null
+}
+
+$dockerCommand = Resolve-DockerCommand
+if ($dockerCommand) {
+  Write-Host "[ready]   $(& $dockerCommand --version)"
+  & $dockerCommand info *> $null
   if ($LASTEXITCODE -eq 0) {
     Write-Host "[ready]   Docker engine is running"
   } else {
