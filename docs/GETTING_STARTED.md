@@ -83,7 +83,10 @@ examples/missing-information-regression/regression-bundle.json
 
 ### 页面提示无法连接 API
 
-确认运行 `pnpm dev` 的终端没有退出，并检查 `http://localhost:4000/health/live` 是否返回 `{"status":"ok"}`。
+确认运行 `pnpm dev` 的终端没有退出，并检查：
+
+- API：`http://localhost:4000/health/live` 返回 `{"status":"ok"}`；
+- Worker：`http://localhost:4101/health/ready` 返回包含 `"status":"ok"` 的结果。
 
 ### 最近诊断提示数据库不可用
 

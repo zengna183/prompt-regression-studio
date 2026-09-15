@@ -8,7 +8,7 @@ describe("readWorkerConfig", () => {
       redisUrl: "redis://localhost:6379",
       concurrency: 4,
       healthHost: "127.0.0.1",
-      healthPort: 4001,
+      healthPort: 4101,
       shutdownTimeoutMs: 30_000,
       logLevel: "info",
     });

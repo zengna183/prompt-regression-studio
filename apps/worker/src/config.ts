@@ -45,7 +45,7 @@ export function readWorkerConfig(environment: NodeJS.ProcessEnv = process.env): 
     redisUrl: environment.REDIS_URL ?? "redis://localhost:6379",
     concurrency: readPositiveInteger(environment, "WORKER_CONCURRENCY", 4),
     healthHost: environment.WORKER_HEALTH_HOST ?? "127.0.0.1",
-    healthPort: readPort(environment, "WORKER_HEALTH_PORT", 4001),
+    healthPort: readPort(environment, "WORKER_HEALTH_PORT", 4101),
     shutdownTimeoutMs: readPositiveInteger(environment, "WORKER_SHUTDOWN_TIMEOUT_MS", 30_000),
     logLevel: logLevel as WorkerConfig["logLevel"],
   };

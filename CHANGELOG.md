@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file. The format 
 - A repeatable Windows bootstrap and environment check, project-scoped Python environment, and shared VS Code tasks/settings for first-time contributors.
 - Cross-platform Python executable discovery for the root test command and HTTP smoke test, preferring the project virtual environment when present.
 - Automatic Docker CLI discovery for Microsoft Store per-user installs and conventional all-user installs on Windows.
+- A documented Worker health configuration using port 4101 by default to avoid the common Windows QQ port collision on 4001.
 
 ### Changed
 
