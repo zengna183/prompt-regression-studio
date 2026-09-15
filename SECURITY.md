@@ -2,7 +2,7 @@
 
 ## Project maturity and supported versions
 
-Prompt Regression Diagnosis is currently pre-alpha. Security updates are provided only on the latest revision of the default branch until the project publishes a version-support table.
+Prompt Regression Studio is currently pre-alpha. Security updates are provided only on the latest revision of the default branch until the project publishes a version-support table.
 
 The current milestone does **not** provide complete authentication, authorization, tenant isolation, credential management, or production hardening. Run it only on a trusted developer machine or an isolated network. Do not expose it directly to the public internet or store production conversations and provider credentials in it.
 

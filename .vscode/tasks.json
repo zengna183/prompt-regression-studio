@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "01 · 检查开发环境",
+      "type": "shell",
+      "command": "pnpm env:check",
+      "problemMatcher": []
+    },
+    {
+      "label": "02 · 安装项目依赖",
+      "type": "shell",
+      "command": "pnpm setup:local",
+      "problemMatcher": []
+    },
+    {
+      "label": "03 · 启动数据库并初始化",
+      "type": "shell",
+      "command": "pnpm local:init",
+      "problemMatcher": []
+    },
+    {
+      "label": "04 · 启动开发环境",
+      "type": "shell",
+      "command": "pnpm dev",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "05 · 运行全部检查",
+      "type": "shell",
+      "command": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+      "problemMatcher": []
+    },
+    {
+      "label": "停止本地数据库",
+      "type": "shell",
+      "command": "pnpm infra:down",
+      "problemMatcher": []
+    }
+  ]
+}

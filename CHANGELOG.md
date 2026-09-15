@@ -20,9 +20,12 @@ All notable changes to this project will be documented in this file. The format 
 - A real HTTP-to-Node-to-Python smoke test for the golden regression bundle.
 - A responsive browser diagnosis workspace with file/paste input, preflight checks, cancellation/retry, strict response parsing, and evidence-first Chinese reporting.
 - Durable PostgreSQL diagnosis runs, a versioned initial SQL migration, safe terminal failures, history/detail APIs, and browser report history.
+- A repeatable Windows bootstrap and environment check, project-scoped Python environment, and shared VS Code tasks/settings for first-time contributors.
+- Cross-platform Python executable discovery for the root test command and HTTP smoke test, preferring the project virtual environment when present.
 
 ### Changed
 
 - Re-centered the architecture, roadmap, and bilingual README from a generic evaluation platform to an Eval-after diagnosis framework.
 - Repaired the existing TypeScript monorepo package build ordering, ioredis v6 import, repository error typing, and strict API option handling.
 - Tightened controlled-ablation validation so model/evaluator changes, incomplete or duplicate results, broken references, unrecovered hard failures, and worst-case control damage cannot be hidden by an average score.
+- Updated GitHub Actions to Node.js 24-based action releases so new CI runs no longer emit the Node.js 20 retirement warning.

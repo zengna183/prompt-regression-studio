@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping build Prompt Regression Diagnosis. The project values reproducibility, inspectable evidence, and honest failure states over impressive-looking demo results.
+Thank you for helping build Prompt Regression Studio. The project values reproducibility, inspectable evidence, and honest failure states over impressive-looking demo results.
 
 By participating, you agree to follow the [Code of Conduct](./CODE_OF_CONDUCT.md). Security vulnerabilities must follow [SECURITY.md](./SECURITY.md), not the public issue tracker.
 

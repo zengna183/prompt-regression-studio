@@ -1,4 +1,4 @@
-# Prompt Regression Diagnosis 路线图
+# Prompt Regression Studio 路线图
 
 路线按“证据是否可信、接口是否稳定、系统是否可运营”排序，不按页面数量排序。每个阶段只有在验收测试进入仓库后才算完成。
 

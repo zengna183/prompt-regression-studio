@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildApp } from "../apps/api/dist/app.js";
 import { PythonProcessDiagnosisEngine } from "../packages/diagnosis-engine/dist/index.js";
+import { resolvePythonExecutable } from "./python-executable.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const coreSource = path.join(repositoryRoot, "packages", "python", "core", "src");
@@ -14,7 +15,10 @@ const fixturePath = path.join(
   "missing-information-regression",
   "regression-bundle.json",
 );
-const executable = process.env.PROMPT_REGRESSION_TEST_PYTHON ?? "python";
+const executable = resolvePythonExecutable(
+  repositoryRoot,
+  process.env.PROMPT_REGRESSION_TEST_PYTHON,
+);
 const bundle = JSON.parse(await readFile(fixturePath, "utf8"));
 const engine = new PythonProcessDiagnosisEngine({
   executable,

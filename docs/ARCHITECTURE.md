@@ -1,10 +1,10 @@
-# Prompt Regression Diagnosis 技术架构
+# Prompt Regression Studio 技术架构
 
 本文描述项目的目标架构，也明确当前代码已经做到哪里。它不是“所有方框都已实现”的宣传图。
 
 ## 1. 一句话定位
 
-Prompt Regression Diagnosis 是一个**评测之后的诊断层**：它接收同一批测试题上基线 Prompt 与候选 Prompt 的评测结果，找出退化现象，提出“可能是哪段 Prompt 引起”的假设，再通过只改变一个因素的消融实验收集证据。
+Prompt Regression Studio 的核心是一个**评测之后的诊断层**：它接收同一批测试题上基线 Prompt 与候选 Prompt 的评测结果，找出退化现象，提出“可能是哪段 Prompt 引起”的假设，再通过只改变一个因素的消融实验收集证据。
 
 它不替代 Promptfoo、Langfuse 或 Phoenix：
 

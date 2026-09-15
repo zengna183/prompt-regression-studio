@@ -1,4 +1,4 @@
-# Prompt Regression Diagnosis
+# Prompt Regression Studio
 
 [中文](./README.md) · [Chinese local setup](./docs/GETTING_STARTED.md) · [Architecture](./docs/ARCHITECTURE.md) · [Contracts](./contracts/README.md) · [ADRs](./docs/adr/) · [Contributing](./CONTRIBUTING.md)
 

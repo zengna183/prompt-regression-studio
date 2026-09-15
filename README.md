@@ -1,4 +1,4 @@
-# Prompt Regression Diagnosis
+# Prompt Regression Studio
 
 [English](./README.en.md) · [本地启动](./docs/GETTING_STARTED.md) · [架构设计](./docs/ARCHITECTURE.md) · [数据合同](./contracts/README.md) · [架构决策](./docs/adr/) · [参与贡献](./CONTRIBUTING.md)
 

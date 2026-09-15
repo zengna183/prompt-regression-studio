@@ -1,5 +1,5 @@
 {
-  "name": "prompt-regression-diagnosis",
+  "name": "prompt-regression-studio",
   "version": "0.1.0-alpha.1",
   "private": true,
   "description": "An evidence-backed framework for prompt regression diagnosis and controlled ablation.",
@@ -9,12 +9,17 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "setup:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local.ps1",
+    "env:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-environment.ps1",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "local:init": "pnpm infra:up && pnpm db:migrate && pnpm db:seed",
     "packages:build": "pnpm --filter \"./packages/**\" build",
     "dev": "pnpm packages:build && pnpm --parallel --filter \"./apps/**\" dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm packages:build && pnpm -r typecheck",
     "test": "pnpm test:python && pnpm packages:build && pnpm -r test",
-    "test:python": "python scripts/run-python-tests.py",
+    "test:python": "node scripts/run-python-tests.mjs",
     "lint": "pnpm packages:build && pnpm -r lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
