@@ -21,7 +21,10 @@ export function createDatabaseClient(
     max: config.poolMax,
     idle_timeout: config.idleTimeoutSeconds,
     connect_timeout: config.connectTimeoutSeconds,
-    ssl: config.ssl ? "require" : false,
+    // `verify-full` encrypts the connection and verifies both the certificate
+    // chain and database hostname. Plain `require` would encrypt without
+    // protecting against a database impersonation attack.
+    ssl: config.ssl ? "verify-full" : false,
   });
   const db = drizzle(sql, { schema });
 

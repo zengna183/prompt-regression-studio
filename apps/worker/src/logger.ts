@@ -15,16 +15,60 @@ const PRIORITY: Readonly<Record<LogLevel, number>> = {
   error: 40,
 };
 
-function normalizeValue(value: unknown): unknown {
+const sensitiveKeyPattern =
+  /^(?:authorization|cookie|password|passwd|secret|token|api[_-]?key|credential)$/iu;
+const connectionSecretPattern =
+  /\b((?:redis|rediss|postgres|postgresql):\/\/[^:\s/@]+):[^@\s/]+@/giu;
+const bearerTokenPattern = /\b(Bearer)\s+[^\s,]+/giu;
+const maximumLogStringLength = 10_000;
+const maximumObjectDepth = 8;
+const maximumCollectionEntries = 100;
+
+function sanitizeString(value: string): string {
+  const bounded =
+    value.length > maximumLogStringLength
+      ? `${value.slice(0, maximumLogStringLength)}…[TRUNCATED]`
+      : value;
+  return bounded
+    .replace(connectionSecretPattern, "$1:[REDACTED]@")
+    .replace(bearerTokenPattern, "$1 [REDACTED]");
+}
+
+function normalizeValue(value: unknown, seen = new WeakSet<object>(), depth = 0): unknown {
+  if (typeof value === "string") return sanitizeString(value);
+  if (typeof value === "bigint") return value.toString();
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= maximumObjectDepth) return "[MAX_DEPTH]";
+  if (seen.has(value)) return "[CIRCULAR]";
+  seen.add(value);
+
   if (value instanceof Error) {
     return {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-      cause: value.cause,
+      name: sanitizeString(value.name),
+      message: sanitizeString(value.message),
+      stack: value.stack === undefined ? undefined : sanitizeString(value.stack),
+      cause: normalizeValue(value.cause, seen, depth + 1),
     };
   }
-  return value;
+  if (Array.isArray(value)) {
+    const normalized = value
+      .slice(0, maximumCollectionEntries)
+      .map((item) => normalizeValue(item, seen, depth + 1));
+    if (value.length > maximumCollectionEntries) normalized.push("[TRUNCATED]");
+    return normalized;
+  }
+
+  const entries = Object.entries(value).slice(0, maximumCollectionEntries);
+  const normalized = Object.fromEntries(
+    entries.map(([key, entryValue]) => [
+      key,
+      sensitiveKeyPattern.test(key) ? "[REDACTED]" : normalizeValue(entryValue, seen, depth + 1),
+    ]),
+  );
+  if (Object.keys(value).length > maximumCollectionEntries) {
+    normalized.__truncated__ = true;
+  }
+  return normalized;
 }
 
 export function createLogger(
@@ -50,7 +94,7 @@ export function createLogger(
       timestamp: new Date().toISOString(),
       level,
       service: "worker",
-      message,
+      message: sanitizeString(message),
       ...normalizedContext,
     });
 

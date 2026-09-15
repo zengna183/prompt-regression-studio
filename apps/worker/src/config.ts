@@ -13,6 +13,7 @@ function readPositiveInteger(
   environment: NodeJS.ProcessEnv,
   name: string,
   fallback: number,
+  maximum: number,
 ): number {
   const rawValue = environment[name];
   if (rawValue === undefined || rawValue === "") {
@@ -20,19 +21,33 @@ function readPositiveInteger(
   }
 
   const parsedValue = Number(rawValue);
-  if (!Number.isSafeInteger(parsedValue) || parsedValue <= 0) {
-    throw new Error(`${name} must be a positive integer`);
+  if (!Number.isSafeInteger(parsedValue) || parsedValue <= 0 || parsedValue > maximum) {
+    throw new Error(`${name} must be an integer from 1 to ${String(maximum)}`);
   }
 
   return parsedValue;
 }
 
 function readPort(environment: NodeJS.ProcessEnv, name: string, fallback: number): number {
-  const port = readPositiveInteger(environment, name, fallback);
-  if (port > 65_535) {
-    throw new Error(`${name} must be between 1 and 65535`);
+  return readPositiveInteger(environment, name, fallback, 65_535);
+}
+
+function readRedisUrl(environment: NodeJS.ProcessEnv): string {
+  const raw = environment.REDIS_URL?.trim() || "redis://localhost:6379";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error("REDIS_URL must be a valid Redis URL");
   }
-  return port;
+
+  if (!(["redis:", "rediss:"] as string[]).includes(parsed.protocol) || !parsed.hostname) {
+    throw new Error("REDIS_URL must use redis:// or rediss:// and include a host");
+  }
+  if (environment.NODE_ENV === "production" && parsed.protocol !== "rediss:") {
+    throw new Error("REDIS_URL must use rediss:// in production");
+  }
+  return raw;
 }
 
 export function readWorkerConfig(environment: NodeJS.ProcessEnv = process.env): WorkerConfig {
@@ -42,11 +57,16 @@ export function readWorkerConfig(environment: NodeJS.ProcessEnv = process.env): 
   }
 
   return {
-    redisUrl: environment.REDIS_URL ?? "redis://localhost:6379",
-    concurrency: readPositiveInteger(environment, "WORKER_CONCURRENCY", 4),
-    healthHost: environment.WORKER_HEALTH_HOST ?? "127.0.0.1",
+    redisUrl: readRedisUrl(environment),
+    concurrency: readPositiveInteger(environment, "WORKER_CONCURRENCY", 4, 128),
+    healthHost: environment.WORKER_HEALTH_HOST?.trim() || "127.0.0.1",
     healthPort: readPort(environment, "WORKER_HEALTH_PORT", 4101),
-    shutdownTimeoutMs: readPositiveInteger(environment, "WORKER_SHUTDOWN_TIMEOUT_MS", 30_000),
+    shutdownTimeoutMs: readPositiveInteger(
+      environment,
+      "WORKER_SHUTDOWN_TIMEOUT_MS",
+      30_000,
+      600_000,
+    ),
     logLevel: logLevel as WorkerConfig["logLevel"],
   };
 }

@@ -1,6 +1,6 @@
 # Prompt Regression Studio
 
-[English](./README.en.md) · [本地启动](./docs/GETTING_STARTED.md) · [架构设计](./docs/ARCHITECTURE.md) · [数据合同](./contracts/README.md) · [架构决策](./docs/adr/) · [参与贡献](./CONTRIBUTING.md)
+[English](./README.en.md) · [本地启动](./docs/GETTING_STARTED.md) · [架构设计](./docs/ARCHITECTURE.md) · [安全部署](./docs/SECURITY_DEPLOYMENT.md) · [数据合同](./contracts/README.md) · [架构决策](./docs/adr/) · [参与贡献](./CONTRIBUTING.md)
 
 一个开源、证据优先的 LLM（大语言模型）Prompt（提示词）回归诊断框架。
 
@@ -8,7 +8,7 @@
 
 > **项目状态：pre-alpha（公开测试前的早期阶段），不可用于生产决策。**
 >
-> 第一条可重复的诊断链路已经可以从 CLI 或 HTTP API 运行，也可以严格导入 Promptfoo v3 的成对评测结果。真实模型消融、诊断记录数据库持久化、身份认证和多租户隔离仍未完成。当前版本适合本地或隔离环境验证，不代表平台已经达到生产成熟度。
+> 第一条可重复的诊断链路已经可以从 CLI 或 HTTP API 运行，也可以严格导入 Promptfoo v3 的成对评测结果。诊断记录数据库持久化和部署级 API Token 防护已经实现；真实模型消融、用户账号、角色权限和多租户隔离仍未完成。当前版本适合本地、内网或受控的单团队部署，不代表平台已经达到成熟 SaaS 程度。
 
 ## 它和通用 Eval 平台有什么不同
 
@@ -111,7 +111,7 @@ pnpm test
 | Promptfoo 官方导入器           | 把两次 Promptfoo 评测变成统一 Bundle                       | v3 已实现且保留来源；Langfuse、OpenInference 和通用 CSV 尚未实现               |
 | CLI + 自动化测试               | 让管线在终端和 CI 运行，并在没有真实 LLM 时测试            | JSON/Markdown 输出、跨语言合同测试已可用；后续增加性质测试和性能基线           |
 | React + Vite + TypeScript      | Prompt 管理与诊断结果网页                                  | 上传、运行、持久化历史和证据报告已接通；逐 case 下钻和浏览器 E2E 尚未完成      |
-| Fastify + TypeBox              | 网页与 Core 之间的 HTTP 入口                               | `POST /v1/diagnoses` 已接通并有资源边界；认证、幂等和异步任务仍未完成          |
+| Fastify + TypeBox              | 网页与 Core 之间的 HTTP 入口                               | 已有部署级 Token、限流、安全响应头和资源边界；账号权限、幂等和异步任务仍未完成 |
 | PostgreSQL + Drizzle           | 保存项目、版本、运行和报告                                 | 一等诊断记录与初始迁移已加入；仍需备份恢复、升级演练和租户隔离测试             |
 | Redis + BullMQ + Node Worker   | 现有后台任务队列和 Worker 生命周期基础                     | 诊断任务、真实 provider/evaluator（模型/评测器）适配器、限流和费用控制尚未实现 |
 
@@ -153,6 +153,6 @@ packages/contracts, db, queue/
 
 ## 安全与贡献
 
-- 当前版本只应在受信任的本地开发环境运行，不要直接暴露到公网；
+- 当前版本适合本地、内网或受控的单团队部署；公网部署前必须完成[安全部署检查单](./docs/SECURITY_DEPLOYMENT.md)，不要把开发环境直接暴露到公网；
 - 发现漏洞请阅读[安全政策](./SECURITY.md)，不要创建公开漏洞 Issue；
 - 提交代码前请阅读[贡献指南](./CONTRIBUTING.md)和[行为准则](./CODE_OF_CONDUCT.md)。

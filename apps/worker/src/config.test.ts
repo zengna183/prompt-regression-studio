@@ -16,13 +16,33 @@ describe("readWorkerConfig", () => {
 
   it("rejects an invalid concurrency", () => {
     expect(() => readWorkerConfig({ WORKER_CONCURRENCY: "0" })).toThrow(
-      "WORKER_CONCURRENCY must be a positive integer",
+      "WORKER_CONCURRENCY must be an integer from 1 to 128",
     );
+    expect(() => readWorkerConfig({ WORKER_CONCURRENCY: "129" })).toThrow(/WORKER_CONCURRENCY/);
   });
 
   it("rejects an invalid health port", () => {
     expect(() => readWorkerConfig({ WORKER_HEALTH_PORT: "70000" })).toThrow(
-      "WORKER_HEALTH_PORT must be between 1 and 65535",
+      "WORKER_HEALTH_PORT must be an integer from 1 to 65535",
+    );
+  });
+
+  it("validates Redis URLs and requires encrypted transport in production", () => {
+    expect(() => readWorkerConfig({ REDIS_URL: "https://example.com" })).toThrow(/REDIS_URL/);
+    expect(() =>
+      readWorkerConfig({ NODE_ENV: "production", REDIS_URL: "redis://cache.internal:6379" }),
+    ).toThrow(/rediss/);
+    expect(
+      readWorkerConfig({
+        NODE_ENV: "production",
+        REDIS_URL: "rediss://worker:secret@cache.internal:6379",
+      }).redisUrl,
+    ).toBe("rediss://worker:secret@cache.internal:6379");
+  });
+
+  it("caps shutdown time to avoid configuration overflow", () => {
+    expect(() => readWorkerConfig({ WORKER_SHUTDOWN_TIMEOUT_MS: "600001" })).toThrow(
+      /WORKER_SHUTDOWN_TIMEOUT_MS/,
     );
   });
 });

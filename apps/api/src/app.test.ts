@@ -17,7 +17,7 @@ import {
 } from "@prompt-regression/diagnosis-engine";
 import { describe, expect, it } from "vitest";
 
-import { buildApp } from "./app.js";
+import { buildApp, type BuildAppOptions } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
 import type {
   DiagnosisRunDetail,
@@ -85,6 +85,154 @@ describe("API", () => {
     const response = await app.inject({ method: "GET", url: "/health/live" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: "ok" });
+    await app.close();
+  });
+
+  it("adds browser security headers and normalizes unsafe request IDs", async () => {
+    const app = await buildTestApp();
+    const valid = await app.inject({
+      method: "GET",
+      url: "/health/live",
+      headers: { "x-request-id": "request-123" },
+    });
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/health/live",
+      headers: { "x-request-id": "line-break-is-not-allowed/" },
+    });
+
+    expect(valid.headers["x-request-id"]).toBe("request-123");
+    expect(valid.headers["x-content-type-options"]).toBe("nosniff");
+    expect(valid.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    expect(invalid.headers["x-request-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    await app.close();
+  });
+
+  it("protects API data with a bearer token while keeping health checks public", async () => {
+    const authToken = "test-security-token-that-is-long-enough";
+    const app = await buildTestApp(
+      new TestCatalog(),
+      new RecordingDiagnosisEngine(),
+      2,
+      undefined,
+      { authToken },
+    );
+
+    expect((await app.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
+
+    const missing = await app.inject({ method: "GET", url: "/v1/projects" });
+    expect(missing.statusCode).toBe(401);
+    expect(missing.json()).toMatchObject({ code: "UNAUTHORIZED" });
+    expect(missing.headers["www-authenticate"]).toContain("Bearer");
+    expect(missing.body).not.toContain(authToken);
+
+    const authorized = await app.inject({
+      method: "GET",
+      url: "/v1/projects",
+      headers: { authorization: `Bearer ${authToken}` },
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.headers["cache-control"]).toBe("no-store");
+
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/v1/projects",
+      headers: {
+        origin: "http://localhost:5173",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization",
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    await app.close();
+  });
+
+  it("disables documentation and refuses unauthenticated production mode", async () => {
+    await expect(
+      buildTestApp(new TestCatalog(), new RecordingDiagnosisEngine(), 2, undefined, {
+        productionMode: true,
+      }),
+    ).rejects.toThrow(/authToken/);
+
+    const app = await buildTestApp(
+      new TestCatalog(),
+      new RecordingDiagnosisEngine(),
+      2,
+      undefined,
+      {
+        productionMode: true,
+        authToken: "production-security-token-is-long-enough",
+        docsEnabled: false,
+      },
+    );
+    const response = await app.inject({ method: "GET", url: "/docs" });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "NOT_FOUND" });
+    await app.close();
+  });
+
+  it("limits abusive traffic without rate limiting orchestrator health checks", async () => {
+    const app = await buildTestApp(
+      new TestCatalog(),
+      new RecordingDiagnosisEngine(),
+      2,
+      undefined,
+      { rateLimitMax: 2, diagnosisRateLimitMax: 1 },
+    );
+
+    expect((await app.inject({ method: "GET", url: "/v1/projects" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/v1/projects" })).statusCode).toBe(200);
+    const limited = await app.inject({ method: "GET", url: "/v1/projects" });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toMatchObject({ code: "RATE_LIMIT_EXCEEDED" });
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect((await app.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
+    }
+    await app.close();
+  });
+
+  it("applies a stricter limit to expensive diagnosis requests", async () => {
+    const engine = new RecordingDiagnosisEngine();
+    const app = await buildTestApp(new TestCatalog(), engine, 2, undefined, {
+      rateLimitMax: 100,
+      diagnosisRateLimitMax: 1,
+    });
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/diagnoses",
+      payload: canonicalBundle,
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/diagnoses",
+      payload: canonicalBundle,
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(429);
+    expect(second.json()).toMatchObject({ code: "RATE_LIMIT_EXCEEDED" });
+    expect(engine.callCount).toBe(1);
+    await app.close();
+  });
+
+  it("rejects oversized bodies before diagnosis work starts", async () => {
+    const engine = new RecordingDiagnosisEngine();
+    const app = await buildTestApp(new TestCatalog(), engine, 2, undefined, {
+      bodyLimitBytes: 1_024,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/diagnoses",
+      payload: { ...canonicalBundle, padding: "x".repeat(2_000) },
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(response.json()).toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+    expect(engine.callCount).toBe(0);
     await app.close();
   });
 
@@ -286,12 +434,19 @@ async function buildTestApp(
   diagnosisEngine: DiagnosisEngine = new RecordingDiagnosisEngine(),
   maxConcurrentDiagnoses = 2,
   diagnosisStore?: DiagnosisStore,
+  securityOptions: Partial<
+    Omit<
+      BuildAppOptions,
+      "catalog" | "diagnosisEngine" | "diagnosisStore" | "maxConcurrentDiagnoses"
+    >
+  > = {},
 ) {
   return await buildApp({
     catalog,
     diagnosisEngine,
     maxConcurrentDiagnoses,
     ...(diagnosisStore ? { diagnosisStore } : {}),
+    ...securityOptions,
   });
 }
 

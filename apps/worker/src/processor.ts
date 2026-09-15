@@ -10,34 +10,9 @@ export type EvaluationJobEnvelope = Pick<
   "id" | "name" | "data" | "attemptsMade"
 >;
 
-function validateRequiredFields(value: unknown): void {
-  if (!value || typeof value !== "object") {
-    throw new Error("payload must be an object");
-  }
-
-  const fields = value as Record<string, unknown>;
-  if (typeof fields.evaluationRunId !== "string" || fields.evaluationRunId.trim() === "") {
-    throw new Error("evaluationRunId must be a non-empty string");
-  }
-  if (
-    typeof fields.requestedAt !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T/.test(fields.requestedAt) ||
-    Number.isNaN(Date.parse(fields.requestedAt))
-  ) {
-    throw new Error("requestedAt must be a valid ISO date-time string");
-  }
-  if (
-    fields.type === "evaluation.reevaluate" &&
-    (typeof fields.generationRunId !== "string" || fields.generationRunId.trim() === "")
-  ) {
-    throw new Error("generationRunId must be a non-empty string for evaluation.reevaluate");
-  }
-}
-
 function assertJobPayload(job: EvaluationJobEnvelope): EvaluationJob {
   try {
     assertEvaluationJob(job.data);
-    validateRequiredFields(job.data);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new UnrecoverableError(`Invalid evaluation job payload: ${reason}`);

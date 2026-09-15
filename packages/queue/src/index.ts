@@ -40,12 +40,50 @@ export function createEvaluationQueue(redisUrl: string): Queue<EvaluationJob> {
 }
 
 export function assertEvaluationJob(value: unknown): asserts value is EvaluationJob {
-  if (!value || typeof value !== "object" || !("type" in value)) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !("type" in value)) {
     throw new Error("Evaluation job payload must be an object with a type field");
   }
 
-  const type = (value as { type?: unknown }).type;
+  const fields = value as Record<string, unknown>;
+  const type = fields.type;
   if (type !== "evaluation.run" && type !== "evaluation.reevaluate") {
     throw new Error(`Unsupported evaluation job type: ${String(type)}`);
+  }
+
+  const expectedKeys =
+    type === "evaluation.run"
+      ? ["evaluationRunId", "requestedAt", "type"]
+      : ["evaluationRunId", "generationRunId", "requestedAt", "type"];
+  const actualKeys = Object.keys(fields).sort();
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    throw new Error("Evaluation job payload contains missing or unsupported fields");
+  }
+
+  assertUuid(fields.evaluationRunId, "evaluationRunId");
+  if (type === "evaluation.reevaluate") {
+    assertUuid(fields.generationRunId, "generationRunId");
+  }
+  assertIsoDateTime(fields.requestedAt);
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const isoDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+
+function assertUuid(value: unknown, name: string): asserts value is string {
+  if (typeof value !== "string" || !uuidPattern.test(value)) {
+    throw new Error(`${name} must be a valid UUID`);
+  }
+}
+
+function assertIsoDateTime(value: unknown): asserts value is string {
+  if (typeof value !== "string" || !isoDateTimePattern.test(value)) {
+    throw new Error("requestedAt must be a valid ISO date-time string");
+  }
+  const epochMilliseconds = Date.parse(value);
+  if (Number.isNaN(epochMilliseconds) || new Date(epochMilliseconds).toISOString() !== value) {
+    throw new Error("requestedAt must be a valid ISO date-time string");
   }
 }

@@ -8,7 +8,7 @@ It is designed to answer more than “which prompt scored higher?” It asks whe
 
 > **Project status: pre-alpha; not suitable for production decisions.**
 >
-> The reproducible diagnosis slice now runs through the CLI, HTTP API, or browser, and paired Promptfoo v3 results can be imported under strict confounder checks. Diagnosis records can be persisted after applying the initial PostgreSQL migration. Real-model ablations, authentication, and tenant isolation are not complete. Use this release only in a trusted or isolated environment.
+> The reproducible diagnosis slice now runs through the CLI, HTTP API, or browser, and paired Promptfoo v3 results can be imported under strict confounder checks. Diagnosis records can be persisted after applying the initial PostgreSQL migration, and the API now has a deployment-wide bearer-token gate and resource controls. Real-model ablations, user accounts, role-based authorization, and tenant isolation are not complete. Use this release locally, on an isolated network, or as a controlled single-team deployment.
 
 ## Why this is not another general Eval clone
 
@@ -92,17 +92,17 @@ Read the [missing-information example](./examples/missing-information-regression
 
 ## Technology and responsibility
 
-| Technology or module           | Responsibility                                                        | Current boundary and likely evolution                                                                              |
-| ------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Python 3.12 reference core     | Vendor-neutral domain model and diagnosis engine                      | Deterministic diagnosis and strict causal gates exist; repeated real experiments and statistical intervals remain  |
-| JSON Schema Draft 2020-12      | Language-neutral contracts for bundles, reports, and plugin manifests | Three strict `v1alpha1` contracts exist; breaking changes remain possible before stable                            |
-| Python `Protocol` + Plugin SDK | Standard sockets, compatibility, and explicit trust checks            | Eleven extension kinds exist; untrusted plugins still need process or container isolation                          |
-| Promptfoo official importer    | Converts paired Promptfoo v3 results into the canonical bundle        | v3 and provenance retention are implemented; Langfuse, OpenInference, and generic CSV remain                       |
-| CLI + automated tests          | Local/CI operation without a live LLM                                 | JSON/Markdown output and cross-language tests exist; property and performance suites should grow                   |
-| React + Vite + TypeScript      | Prompt management and diagnosis UI                                    | Upload, execution, durable history, and evidence reports are connected; per-case drill-down and browser E2E remain |
-| Fastify + TypeBox              | HTTP boundary between clients and Core                                | `POST /v1/diagnoses` is connected; authentication, idempotency, and asynchronous jobs remain                       |
-| PostgreSQL + Drizzle           | Relational/versioning and diagnosis persistence                       | First-class diagnosis records and initial migration exist; backup/restore, upgrade, and tenant tests remain        |
-| Redis + BullMQ + Node worker   | Existing background-work and worker-lifecycle foundation              | Diagnosis jobs, real provider/evaluator adapters, rate limits, and cost controls remain                            |
+| Technology or module           | Responsibility                                                        | Current boundary and likely evolution                                                                                                              |
+| ------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python 3.12 reference core     | Vendor-neutral domain model and diagnosis engine                      | Deterministic diagnosis and strict causal gates exist; repeated real experiments and statistical intervals remain                                  |
+| JSON Schema Draft 2020-12      | Language-neutral contracts for bundles, reports, and plugin manifests | Three strict `v1alpha1` contracts exist; breaking changes remain possible before stable                                                            |
+| Python `Protocol` + Plugin SDK | Standard sockets, compatibility, and explicit trust checks            | Eleven extension kinds exist; untrusted plugins still need process or container isolation                                                          |
+| Promptfoo official importer    | Converts paired Promptfoo v3 results into the canonical bundle        | v3 and provenance retention are implemented; Langfuse, OpenInference, and generic CSV remain                                                       |
+| CLI + automated tests          | Local/CI operation without a live LLM                                 | JSON/Markdown output and cross-language tests exist; property and performance suites should grow                                                   |
+| React + Vite + TypeScript      | Prompt management and diagnosis UI                                    | Upload, execution, durable history, and evidence reports are connected; per-case drill-down and browser E2E remain                                 |
+| Fastify + TypeBox              | HTTP boundary between clients and Core                                | Deployment token, rate limits, security headers, and resource bounds are present; account authorization, idempotency, and asynchronous jobs remain |
+| PostgreSQL + Drizzle           | Relational/versioning and diagnosis persistence                       | First-class diagnosis records and initial migration exist; backup/restore, upgrade, and tenant tests remain                                        |
+| Redis + BullMQ + Node worker   | Existing background-work and worker-lifecycle foundation              | Diagnosis jobs, real provider/evaluator adapters, rate limits, and cost controls remain                                                            |
 
 React, Fastify, PostgreSQL, and BullMQ do not need replacement in the short term. The important change is the boundary: diagnosis semantics remain in Stable Core, while the web, API, worker, database, and providers connect through versioned contracts and ports. Replacing a provider, queue, or persistence adapter must not redefine “regression” or “evidence.” See [ADR 0001](./docs/adr/0001-diagnosis-layer-boundary.md), [ADR 0002](./docs/adr/0002-python-reference-core.md), and [ADR 0004](./docs/adr/0004-ports-and-adapters.md).
 
@@ -142,6 +142,6 @@ Future copied code requires path-and-commit verification, preserved license and 
 
 ## Security and contributions
 
-- Run this version only in a trusted local development environment; do not expose it directly to the public internet.
+- Run this version locally, on an isolated network, or as a controlled single-team deployment. Do not expose the development stack directly to the public internet; follow the [security deployment guide](./docs/SECURITY_DEPLOYMENT.md) first.
 - Follow the [security policy](./SECURITY.md) and do not disclose vulnerabilities through a public issue.
 - Read the [contribution guide](./CONTRIBUTING.md) and [code of conduct](./CODE_OF_CONDUCT.md) before contributing.

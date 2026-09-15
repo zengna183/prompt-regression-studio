@@ -23,12 +23,36 @@ const app = await buildApp({
   catalog: createDatabaseCatalog(database.db),
   diagnosisEngine,
   diagnosisStore: createDatabaseDiagnosisStore(database.db),
+  ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
+  bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
+  docsEnabled: config.API_DOCS_ENABLED,
+  productionMode: config.NODE_ENV === "production",
+  rateLimitMax: config.API_RATE_LIMIT_MAX,
+  rateLimitWindowMs: config.API_RATE_LIMIT_WINDOW_MS,
+  diagnosisRateLimitMax: config.DIAGNOSIS_RATE_LIMIT_MAX,
+  trustProxy: config.API_TRUST_PROXY,
   maxConcurrentDiagnoses: config.DIAGNOSIS_MAX_CONCURRENCY,
   readiness: async () => {
     await database.sql`select 1`;
   },
   webOrigin: config.WEB_ORIGIN,
-  logger: { level: config.LOG_LEVEL },
+  logger: {
+    level: config.LOG_LEVEL,
+    redact: {
+      paths: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "request.headers.authorization",
+        "request.headers.cookie",
+        "*.apiKey",
+        "*.api_key",
+        "*.password",
+        "*.secret",
+        "*.token",
+      ],
+      censor: "[REDACTED]",
+    },
+  },
 });
 
 let closing = false;

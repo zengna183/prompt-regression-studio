@@ -36,4 +36,21 @@ describe("loadDatabaseConfig", () => {
       }),
     ).toThrow(/DATABASE_SSL/);
   });
+
+  it("requires encrypted PostgreSQL transport in production", () => {
+    expect(() =>
+      loadDatabaseConfig({
+        NODE_ENV: "production",
+        DATABASE_URL: "postgres://eval:secret@db.internal/eval",
+      }),
+    ).toThrow(/DATABASE_SSL/);
+
+    expect(
+      loadDatabaseConfig({
+        NODE_ENV: "production",
+        DATABASE_URL: "postgres://eval:secret@db.internal/eval",
+        DATABASE_SSL: "true",
+      }).ssl,
+    ).toBe(true);
+  });
 });

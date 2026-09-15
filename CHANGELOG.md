@@ -24,6 +24,9 @@ All notable changes to this project will be documented in this file. The format 
 - Cross-platform Python executable discovery for the root test command and HTTP smoke test, preferring the project virtual environment when present.
 - Automatic Docker CLI discovery for Microsoft Store per-user installs and conventional all-user installs on Windows.
 - A documented Worker health configuration using port 4101 by default to avoid the common Windows QQ port collision on 4001.
+- Production-safe API defaults: a required deployment bearer token, constant-time credential checks, global and diagnosis-specific rate limits, request-size limits, security headers, restricted CORS, normalized request IDs, no-store responses, safe 404/413/429 errors, and production-disabled API documentation.
+- A plain-language security deployment guide, CI production-dependency audit, weekly Dependabot updates, and CodeQL analysis for TypeScript and Python.
+- Strict queue-envelope validation and recursive Worker log redaction for credentials, connection strings, oversized values, and circular structures.
 
 ### Changed
 
@@ -31,3 +34,5 @@ All notable changes to this project will be documented in this file. The format 
 - Repaired the existing TypeScript monorepo package build ordering, ioredis v6 import, repository error typing, and strict API option handling.
 - Tightened controlled-ablation validation so model/evaluator changes, incomplete or duplicate results, broken references, unrecovered hard failures, and worst-case control damage cannot be hidden by an average score.
 - Updated GitHub Actions to Node.js 24-based action releases so new CI runs no longer emit the Node.js 20 retirement warning.
+- Upgraded `drizzle-orm` to the patched 0.45.2 release, required encrypted certificate-verified PostgreSQL and Redis transport in production, and bound development data services to localhost.
+- Separated production TypeScript output from test artifacts and made package builds remove stale output before compiling.

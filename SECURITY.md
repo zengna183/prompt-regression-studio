@@ -4,7 +4,7 @@
 
 Prompt Regression Studio is currently pre-alpha. Security updates are provided only on the latest revision of the default branch until the project publishes a version-support table.
 
-The current milestone does **not** provide complete authentication, authorization, tenant isolation, credential management, or production hardening. Run it only on a trusted developer machine or an isolated network. Do not expose it directly to the public internet or store production conversations and provider credentials in it.
+The current milestone provides a deployment-wide bearer-token gate, rate limits, request-size limits, security headers, and safe public error boundaries. It does **not** provide user accounts, role-based authorization, tenant isolation, complete credential management, or mature SaaS hardening. Use it locally, on an isolated network, or as a controlled single-team deployment. Do not expose the development stack directly to the public internet or store production conversations and provider credentials in it.
 
 ## Reporting a vulnerability
 
@@ -40,6 +40,8 @@ Reports are especially valuable for:
 Prompt injection in evaluated content is expected adversarial input. It becomes a security issue when it escapes the evaluator boundary, accesses secrets/tools, changes platform policy, crosses projects, or is presented as trusted system instruction.
 
 ## Deployment guidance
+
+See the plain-language [security deployment guide](./docs/SECURITY_DEPLOYMENT.md) for the implemented controls, required environment variables, recommended topology, deployment checklist, and explicitly unresolved risks.
 
 For any non-local deployment, at minimum:
 

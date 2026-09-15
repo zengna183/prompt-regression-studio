@@ -23,7 +23,7 @@ describe("processEvaluationJob", () => {
       attemptsMade: 0,
       data: {
         type: "evaluation.run",
-        evaluationRunId: "run-1",
+        evaluationRunId: "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5",
         requestedAt: "2026-09-12T00:00:00.000Z",
       },
     };
@@ -44,7 +44,7 @@ describe("processEvaluationJob", () => {
       attemptsMade: 0,
       data: {
         type: "evaluation.run",
-        evaluationRunId: "run-2",
+        evaluationRunId: "69d92e0c-cb85-49e9-94c6-c85082377a3a",
         requestedAt: "2026-09-12T00:00:00.000Z",
       },
     } as EvaluationJobEnvelope;
@@ -79,7 +79,7 @@ describe("processEvaluationJob", () => {
     } as unknown as EvaluationJobEnvelope;
 
     await expect(processEvaluationJob(job, createLoggerStub())).rejects.toThrow(
-      "evaluationRunId must be a non-empty string",
+      "missing or unsupported fields",
     );
   });
 });

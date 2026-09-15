@@ -62,11 +62,17 @@ function readDatabaseUrl(env: NodeJS.ProcessEnv): string {
 
 /** Loads configuration without opening a connection or logging credentials. */
 export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env): DatabaseConfig {
-  return Object.freeze({
+  const config = {
     url: readDatabaseUrl(env),
     poolMax: readPositiveInteger(env, "DATABASE_POOL_MAX", 10, 100),
     idleTimeoutSeconds: readPositiveInteger(env, "DATABASE_IDLE_TIMEOUT_SECONDS", 20, 3600),
     connectTimeoutSeconds: readPositiveInteger(env, "DATABASE_CONNECT_TIMEOUT_SECONDS", 10, 300),
     ssl: readBoolean(env, "DATABASE_SSL", false),
-  });
+  };
+
+  if (env.NODE_ENV === "production" && !config.ssl) {
+    throw new DatabaseConfigurationError("DATABASE_SSL must be true in production");
+  }
+
+  return Object.freeze(config);
 }

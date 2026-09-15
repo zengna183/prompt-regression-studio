@@ -24,6 +24,8 @@ export interface DiagnosisRouteOptions {
   readonly engine: DiagnosisEngine;
   readonly store?: DiagnosisStore;
   readonly maxConcurrentDiagnoses: number;
+  readonly rateLimitMax: number;
+  readonly rateLimitWindowMs: number;
 }
 
 const DiagnosisStatusSchema = Type.Union([
@@ -45,12 +47,20 @@ const ListDiagnosesQuerySchema = Type.Object(
 
 export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAsyncTypebox {
   validateConcurrency(options.maxConcurrentDiagnoses);
+  validatePositiveInteger(options.rateLimitMax, "rateLimitMax");
+  validatePositiveInteger(options.rateLimitWindowMs, "rateLimitWindowMs");
   let activeDiagnoses = 0;
 
   return (app) => {
     app.post(
       "/v1/diagnoses",
       {
+        config: {
+          rateLimit: {
+            max: options.rateLimitMax,
+            timeWindow: options.rateLimitWindowMs,
+          },
+        },
         schema: {
           tags: ["diagnoses"],
           summary: "Diagnose a canonical baseline-to-candidate prompt regression bundle",
@@ -190,8 +200,12 @@ function createRequestAbortSignal(request: IncomingMessage): RequestAbortSignal 
 }
 
 function validateConcurrency(value: number): void {
+  validatePositiveInteger(value, "maxConcurrentDiagnoses");
+}
+
+function validatePositiveInteger(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new RangeError("maxConcurrentDiagnoses must be a positive safe integer.");
+    throw new RangeError(`${name} must be a positive safe integer.`);
   }
 }
 

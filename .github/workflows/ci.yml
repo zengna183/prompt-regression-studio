@@ -54,6 +54,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
       - name: Produce report for cross-language contract validation
         env:
           PYTHONPATH: packages/python/core/src
