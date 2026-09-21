@@ -136,6 +136,8 @@ importers:
 
   packages/diagnosis-engine: {}
 
+  packages/model-provider: {}
+
   packages/queue:
     dependencies:
       bullmq:
