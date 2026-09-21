@@ -23,7 +23,7 @@
     "@fastify/type-provider-typebox": "6.1.0",
     "@prompt-regression/diagnosis-engine": "workspace:*",
     "@sinclair/typebox": "0.34.52",
-    "fastify": "5.12.4",
-    "zod": "4.6.2"
+    "fastify": "5.12.5",
+    "zod": "4.6.5"
   }
 }

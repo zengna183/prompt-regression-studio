@@ -15,6 +15,6 @@
     "@ai-chat-eval/db": "workspace:*",
     "@ai-chat-eval/queue": "workspace:*",
     "@prompt-regression/model-provider": "workspace:*",
-    "bullmq": "6.3.4"
+    "bullmq": "6.3.7"
   }
 }
