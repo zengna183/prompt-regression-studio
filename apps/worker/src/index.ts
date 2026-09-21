@@ -3,17 +3,29 @@ import {
   EVALUATION_QUEUE_NAME,
   type EvaluationJob,
 } from "@ai-chat-eval/queue";
+import { createDatabaseClient, createEvaluationRepository } from "@ai-chat-eval/db";
 import { Worker } from "bullmq";
 import type { Server } from "node:http";
 
 import { readWorkerConfig } from "./config.js";
 import { closeHealthServer, startHealthServer } from "./health.js";
 import { createLogger } from "./logger.js";
+import { createEvaluationExecutor } from "./executor.js";
 import { processEvaluationJob, type EvaluationJobName } from "./processor.js";
 
 async function main(): Promise<void> {
   const config = readWorkerConfig();
   const logger = createLogger(config.logLevel);
+  const database = createDatabaseClient();
+  const repository = createEvaluationRepository(database.db);
+  const executor = createEvaluationExecutor({
+    repository,
+    baseUrl: config.modelProviderBaseUrl,
+    apiKey: config.modelProviderApiKey,
+    production: config.modelProviderProduction,
+    allowPrivateNetwork: config.modelProviderAllowPrivateNetwork,
+    timeoutMs: config.modelProviderTimeoutMs,
+  });
   const redis = createRedisConnection(config.redisUrl);
   let ready = false;
   let shuttingDown = false;
@@ -24,9 +36,9 @@ async function main(): Promise<void> {
     logger.error("Redis connection error", { error });
   });
 
-  const worker = new Worker<EvaluationJob, never, EvaluationJobName>(
+  const worker = new Worker<EvaluationJob, void, EvaluationJobName>(
     EVALUATION_QUEUE_NAME,
-    (job) => processEvaluationJob(job, logger),
+    (job) => processEvaluationJob(job, logger, executor),
     {
       connection: redis,
       concurrency: config.concurrency,
@@ -65,6 +77,9 @@ async function main(): Promise<void> {
         await redis.quit().catch((error: unknown) => {
           logger.error("Graceful Redis close failed", { error });
         });
+        await database.close().catch((error: unknown) => {
+          logger.error("Graceful database close failed", { error });
+        });
         if (healthServer) {
           await closeHealthServer(healthServer).catch((error: unknown) => {
             logger.error("Graceful health server close failed", { error });
@@ -82,6 +97,9 @@ async function main(): Promise<void> {
           logger.error("Forced worker close failed", { error });
         });
         redis.disconnect(false);
+        await database.close().catch((error: unknown) => {
+          logger.error("Database close failed", { error });
+        });
         if (healthServer) {
           healthServer.closeAllConnections();
           await closeHealthServer(healthServer).catch((error: unknown) => {

@@ -1,10 +1,12 @@
 export * from "./diagnoses.js";
+export * from "./evaluations.js";
 export * from "./frameworks.js";
 export * from "./projects.js";
 export * from "./prompts.js";
 
 import type { Database } from "../client.js";
 import { createDiagnosisRunRepository } from "./diagnoses.js";
+import { createEvaluationRepository } from "./evaluations.js";
 import { createFrameworkRepository } from "./frameworks.js";
 import { createProjectRepository } from "./projects.js";
 import { createPromptRepository } from "./prompts.js";
@@ -15,6 +17,7 @@ export function createRepositories(db: Database) {
     prompts: createPromptRepository(db),
     frameworks: createFrameworkRepository(db),
     diagnoses: createDiagnosisRunRepository(db),
+    evaluations: createEvaluationRepository(db),
   });
 }
 

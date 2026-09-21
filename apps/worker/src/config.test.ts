@@ -6,6 +6,11 @@ describe("readWorkerConfig", () => {
   it("uses safe local defaults", () => {
     expect(readWorkerConfig({})).toEqual({
       redisUrl: "redis://localhost:6379",
+      modelProviderBaseUrl: "http://127.0.0.1:11434",
+      modelProviderApiKey: "local-development-key",
+      modelProviderProduction: false,
+      modelProviderAllowPrivateNetwork: true,
+      modelProviderTimeoutMs: 60_000,
       concurrency: 4,
       healthHost: "127.0.0.1",
       healthPort: 4101,
@@ -36,6 +41,7 @@ describe("readWorkerConfig", () => {
       readWorkerConfig({
         NODE_ENV: "production",
         REDIS_URL: "rediss://worker:secret@cache.internal:6379",
+        MODEL_PROVIDER_API_KEY: "production-provider-key",
       }).redisUrl,
     ).toBe("rediss://worker:secret@cache.internal:6379");
   });

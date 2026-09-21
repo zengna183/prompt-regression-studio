@@ -108,9 +108,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ai-chat-eval/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@ai-chat-eval/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@prompt-regression/model-provider':
+        specifier: workspace:*
+        version: link:../../packages/model-provider
       bullmq:
         specifier: 6.3.4
         version: 6.3.4(ioredis@6.0.0)

@@ -1,6 +1,7 @@
 import { assertEvaluationJob, type EvaluationJob } from "@ai-chat-eval/queue";
 import { UnrecoverableError, type Job } from "bullmq";
 
+import type { EvaluationExecutor } from "./executor.js";
 import type { Logger } from "./logger.js";
 
 export type EvaluationJobName = EvaluationJob["type"];
@@ -32,7 +33,11 @@ function assertJobPayload(job: EvaluationJobEnvelope): EvaluationJob {
  * loudly and without retrying so an incomplete deployment can never publish a
  * fabricated score or silently report success.
  */
-export function processEvaluationJob(job: EvaluationJobEnvelope, logger: Logger): Promise<never> {
+export function processEvaluationJob(
+  job: EvaluationJobEnvelope,
+  logger: Logger,
+  executor?: EvaluationExecutor,
+): Promise<void> {
   return Promise.resolve().then(() => {
     const data = assertJobPayload(job);
     const jobLogger = logger.child({
@@ -45,12 +50,15 @@ export function processEvaluationJob(job: EvaluationJobEnvelope, logger: Logger)
 
     switch (data.type) {
       case "evaluation.run":
-        throw new UnrecoverableError(
-          "evaluation.run is not implemented in the current milestone; no score was created",
-        );
+        if (!executor) {
+          throw new UnrecoverableError(
+            "Evaluation executor is not configured; no score was created",
+          );
+        }
+        return executor.execute(data.evaluationRunId, jobLogger).then(() => undefined);
       case "evaluation.reevaluate":
         throw new UnrecoverableError(
-          "evaluation.reevaluate is not implemented in the current milestone; no score was created",
+          "evaluation.reevaluate is not implemented in the generation milestone; no score was created",
         );
       default: {
         const exhaustiveCheck: never = data;
