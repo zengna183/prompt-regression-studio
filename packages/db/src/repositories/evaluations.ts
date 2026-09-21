@@ -4,16 +4,19 @@ import type { Database } from "../client.js";
 import { EntityNotFoundError } from "../errors.js";
 import {
   evaluationCases,
+  evaluationFrameworkVersions,
   evaluationRuns,
   experiments,
   generationOutputs,
   generationRuns,
   promptVersions,
+  scores,
   type EvaluationCase,
   type EvaluationRun,
   type GenerationOutput,
   type GenerationRun,
   type JsonValue,
+  type Score,
 } from "../schema.js";
 
 export interface EvaluationExecutionSnapshot {
@@ -21,6 +24,7 @@ export interface EvaluationExecutionSnapshot {
   readonly generationRun: GenerationRun;
   readonly experiment: typeof experiments.$inferSelect;
   readonly promptVersion: typeof promptVersions.$inferSelect;
+  readonly frameworkVersion: typeof evaluationFrameworkVersions.$inferSelect;
   readonly cases: EvaluationCase[];
 }
 
@@ -41,11 +45,28 @@ export interface SaveGenerationOutputInput {
   readonly attemptCount: number;
 }
 
+export interface SaveScoreInput {
+  readonly evaluationRunId: string;
+  readonly generationOutputId: string;
+  readonly kind: "dimension" | "overall" | "rule";
+  readonly metricKey: string;
+  readonly score: number;
+  readonly minScore: number;
+  readonly maxScore: number;
+  readonly normalizedScore?: number | null;
+  readonly passed?: boolean | null;
+  readonly confidence?: number | null;
+  readonly rationale?: string | null;
+  readonly evidence?: JsonValue | null;
+  readonly rawResult?: JsonValue | null;
+}
+
 export interface EvaluationRepository {
   getExecutionSnapshot(evaluationRunId: string): Promise<EvaluationExecutionSnapshot | null>;
   claimEvaluation(evaluationRunId: string): Promise<EvaluationRun | null>;
   startGenerationRun(generationRunId: string): Promise<GenerationRun>;
   saveGenerationOutput(input: SaveGenerationOutputInput): Promise<GenerationOutput>;
+  saveScores(input: readonly SaveScoreInput[]): Promise<Score[]>;
   completeGenerationRun(
     generationRunId: string,
     result: { readonly succeededCount: number; readonly failedCount: number },
@@ -73,11 +94,16 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
           generationRun: generationRuns,
           experiment: experiments,
           promptVersion: promptVersions,
+          frameworkVersion: evaluationFrameworkVersions,
         })
         .from(evaluationRuns)
         .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
         .innerJoin(experiments, eq(evaluationRuns.experimentId, experiments.id))
         .innerJoin(promptVersions, eq(generationRuns.promptVersionId, promptVersions.id))
+        .innerJoin(
+          evaluationFrameworkVersions,
+          eq(evaluationRuns.frameworkVersionId, evaluationFrameworkVersions.id),
+        )
         .where(eq(evaluationRuns.id, evaluationRunId))
         .limit(1);
       if (!joined) return null;
@@ -136,6 +162,38 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
         })
         .returning();
       if (!saved) throw new Error("PostgreSQL did not return the generation output");
+      return saved;
+    },
+
+    async saveScores(input) {
+      const saved: Score[] = [];
+      for (const score of input) {
+        const [created] = await db
+          .insert(scores)
+          .values(score)
+          .onConflictDoUpdate({
+            target: [
+              scores.evaluationRunId,
+              scores.generationOutputId,
+              scores.kind,
+              scores.metricKey,
+            ],
+            set: {
+              score: score.score,
+              minScore: score.minScore,
+              maxScore: score.maxScore,
+              normalizedScore: score.normalizedScore,
+              passed: score.passed,
+              confidence: score.confidence,
+              rationale: score.rationale,
+              evidence: score.evidence,
+              rawResult: score.rawResult,
+            },
+          })
+          .returning();
+        if (!created) throw new Error("PostgreSQL did not return the score");
+        saved.push(created);
+      }
       return saved;
     },
 

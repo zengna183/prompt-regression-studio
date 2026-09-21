@@ -6,6 +6,7 @@ import {
 } from "@prompt-regression/model-provider";
 import { createHash } from "node:crypto";
 
+import { evaluateGeneratedOutput } from "./evaluator.js";
 import type { Logger } from "./logger.js";
 
 export interface EvaluationExecutorOptions {
@@ -73,8 +74,9 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
             })),
           };
 
+          let response;
           try {
-            const response = await client.complete({
+            response = await client.complete({
               model: snapshot.generationRun.model,
               messages,
             });
@@ -100,7 +102,21 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               status: "succeeded",
               attemptCount: 1,
             };
-            await options.repository.saveGenerationOutput(output);
+            const savedOutput = await options.repository.saveGenerationOutput(output);
+            const evaluatorModel = readEvaluatorModel(
+              snapshot.evaluationRun.evaluatorConfig,
+              snapshot.generationRun.model,
+            );
+            const scored = await evaluateGeneratedOutput({
+              client,
+              evaluationRunId,
+              generationOutputId: savedOutput.id,
+              evaluatorModel,
+              framework: snapshot.frameworkVersion.definition,
+              expectedOutput: evaluationCase.expectedOutput,
+              outputText: response.text,
+            });
+            await options.repository.saveScores(scored.scores);
             succeededCount += 1;
           } catch (error) {
             const failure = normalizeFailure(error);
@@ -147,6 +163,11 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
       }
     },
   };
+}
+
+function readEvaluatorModel(value: Record<string, JsonValue>, fallback: string): string {
+  const candidate = value.model;
+  return typeof candidate === "string" && candidate.length > 0 ? candidate : fallback;
 }
 
 export function stringifyCaseInput(input: unknown): string {

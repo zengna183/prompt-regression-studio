@@ -6,6 +6,7 @@ import type {
   PromptVersion,
   Experiment,
   EvaluationCase,
+  EvaluationFrameworkVersion,
   SaveGenerationOutputInput,
 } from "@ai-chat-eval/db";
 import { describe, expect, it, vi } from "vitest";
@@ -23,10 +24,27 @@ const logger: Logger = {
 
 function createSnapshot(): EvaluationExecutionSnapshot {
   return {
-    evaluationRun: { id: "eval-run" } as EvaluationRun,
+    evaluationRun: { id: "eval-run", evaluatorConfig: {} } as unknown as EvaluationRun,
     generationRun: { id: "generation-run", model: "test-model" } as GenerationRun,
     experiment: { datasetVersionId: "dataset-version" } as Experiment,
     promptVersion: { compiledContent: "Answer briefly." } as PromptVersion,
+    frameworkVersion: {
+      definition: {
+        levels: [],
+        dimensions: [
+          {
+            id: "quality",
+            name: "Quality",
+            description: "Quality",
+            weight: 1,
+            scoringGuide: [
+              { score: 0, description: "bad" },
+              { score: 1, description: "good" },
+            ],
+          },
+        ],
+      },
+    } as unknown as EvaluationFrameworkVersion,
     cases: [{ id: "case-1", input: { question: "hello" } }] as unknown as EvaluationCase[],
   };
 }
@@ -48,12 +66,42 @@ function createRepository(snapshot: EvaluationExecutionSnapshot): EvaluationRepo
     failGenerationRun: vi.fn(() => Promise.resolve(snapshot.generationRun)),
     completeEvaluationRun: vi.fn(() => Promise.resolve(snapshot.evaluationRun)),
     failEvaluationRun: vi.fn(() => Promise.resolve(snapshot.evaluationRun)),
+    saveScores: vi.fn(() => Promise.resolve([])),
   };
 }
 
 describe("evaluation executor", () => {
   it("calls the model and persists a redacted, hashed output", async () => {
     const repository = createRepository(createSnapshot());
+    const responses = [
+      {
+        id: "request-1",
+        model: "test-model",
+        choices: [{ message: { content: "world" } }],
+        usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+      },
+      {
+        id: "judge-1",
+        model: "test-model",
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                scores: [
+                  {
+                    metricKey: "quality",
+                    score: 1,
+                    rationale: "The answer is useful.",
+                    evidence: ["world"],
+                    confidence: 0.9,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    ];
     const executor = createEvaluationExecutor({
       repository,
       baseUrl: "https://api.example.com",
@@ -62,17 +110,7 @@ describe("evaluation executor", () => {
       allowPrivateNetwork: false,
       timeoutMs: 10_000,
       fetchImpl: vi.fn(() =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              id: "request-1",
-              model: "test-model",
-              choices: [{ message: { content: "world" } }],
-              usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
-            }),
-            { status: 200 },
-          ),
-        ),
+        Promise.resolve(new Response(JSON.stringify(responses.shift()), { status: 200 })),
       ),
     });
 
