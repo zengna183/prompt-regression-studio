@@ -29,6 +29,7 @@ export interface EvaluationExecutionSnapshot {
 }
 
 export interface SaveGenerationOutputInput {
+  readonly id?: string | undefined;
   readonly generationRunId: string;
   readonly caseId: string;
   readonly request: JsonValue;
@@ -66,6 +67,11 @@ export interface EvaluationRepository {
   claimEvaluation(evaluationRunId: string): Promise<EvaluationRun | null>;
   startGenerationRun(generationRunId: string): Promise<GenerationRun>;
   saveGenerationOutput(input: SaveGenerationOutputInput): Promise<GenerationOutput>;
+  /** Atomically persists a successful output and all of its scores. */
+  saveGenerationOutputAndScores(
+    output: SaveGenerationOutputInput,
+    scores: readonly SaveScoreInput[],
+  ): Promise<{ readonly output: GenerationOutput; readonly scores: readonly Score[] }>;
   saveScores(input: readonly SaveScoreInput[]): Promise<Score[]>;
   completeGenerationRun(
     generationRunId: string,
@@ -136,23 +142,7 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
     },
 
     async saveGenerationOutput(input) {
-      const values = {
-        generationRunId: input.generationRunId,
-        caseId: input.caseId,
-        status: input.status,
-        request: input.request,
-        outputText: input.outputText,
-        rawResponse: input.rawResponse,
-        outputHash: input.outputHash,
-        latencyMs: input.latencyMs,
-        inputTokens: input.inputTokens,
-        outputTokens: input.outputTokens,
-        providerRequestId: input.providerRequestId,
-        errorCode: input.errorCode,
-        errorMessage: input.errorMessage,
-        attemptCount: input.attemptCount,
-        completedAt: new Date(),
-      };
+      const values = generationOutputValues(input);
       const [saved] = await db
         .insert(generationOutputs)
         .values(values)
@@ -163,6 +153,51 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
         .returning();
       if (!saved) throw new Error("PostgreSQL did not return the generation output");
       return saved;
+    },
+
+    async saveGenerationOutputAndScores(output, scoreInputs) {
+      return db.transaction(async (tx) => {
+        const values = generationOutputValues(output);
+        const [savedOutput] = await tx
+          .insert(generationOutputs)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [generationOutputs.generationRunId, generationOutputs.caseId],
+            set: values,
+          })
+          .returning();
+        if (!savedOutput) throw new Error("PostgreSQL did not return the generation output");
+
+        const savedScores: Score[] = [];
+        for (const score of scoreInputs) {
+          const [created] = await tx
+            .insert(scores)
+            .values(score)
+            .onConflictDoUpdate({
+              target: [
+                scores.evaluationRunId,
+                scores.generationOutputId,
+                scores.kind,
+                scores.metricKey,
+              ],
+              set: {
+                score: score.score,
+                minScore: score.minScore,
+                maxScore: score.maxScore,
+                normalizedScore: score.normalizedScore,
+                passed: score.passed,
+                confidence: score.confidence,
+                rationale: score.rationale,
+                evidence: score.evidence,
+                rawResult: score.rawResult,
+              },
+            })
+            .returning();
+          if (!created) throw new Error("PostgreSQL did not return the score");
+          savedScores.push(created);
+        }
+        return { output: savedOutput, scores: savedScores };
+      });
     },
 
     async saveScores(input) {
@@ -260,5 +295,26 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
       if (!failed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
       return failed;
     },
+  };
+}
+
+function generationOutputValues(input: SaveGenerationOutputInput) {
+  return {
+    ...(input.id === undefined ? {} : { id: input.id }),
+    generationRunId: input.generationRunId,
+    caseId: input.caseId,
+    status: input.status,
+    request: input.request,
+    outputText: input.outputText,
+    rawResponse: input.rawResponse,
+    outputHash: input.outputHash,
+    latencyMs: input.latencyMs,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    providerRequestId: input.providerRequestId,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    attemptCount: input.attemptCount,
+    completedAt: new Date(),
   };
 }
