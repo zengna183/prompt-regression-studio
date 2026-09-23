@@ -25,7 +25,11 @@ const logger: Logger = {
 function createSnapshot(): EvaluationExecutionSnapshot {
   return {
     evaluationRun: { id: "eval-run", evaluatorConfig: {} } as unknown as EvaluationRun,
-    generationRun: { id: "generation-run", model: "test-model" } as GenerationRun,
+    generationRun: {
+      id: "generation-run",
+      model: "test-model",
+      modelConfig: { temperature: 0, maxTokens: 128 },
+    } as unknown as GenerationRun,
     experiment: { datasetVersionId: "dataset-version" } as Experiment,
     promptVersion: { compiledContent: "Answer briefly." } as PromptVersion,
     frameworkVersion: {
@@ -61,6 +65,10 @@ function createRepository(snapshot: EvaluationExecutionSnapshot): EvaluationRepo
     saveGenerationOutput: vi.fn((input: SaveGenerationOutputInput) => {
       saved.push(input);
       return Promise.resolve(input as never);
+    }),
+    saveGenerationOutputAndScores: vi.fn((input: SaveGenerationOutputInput) => {
+      saved.push(input);
+      return Promise.resolve({ output: input as never, scores: [] });
     }),
     completeGenerationRun: vi.fn(() => Promise.resolve(snapshot.generationRun)),
     failGenerationRun: vi.fn(() => Promise.resolve(snapshot.generationRun)),
@@ -102,6 +110,7 @@ describe("evaluation executor", () => {
         ],
       },
     ];
+    const requests: Array<Record<string, unknown>> = [];
     const executor = createEvaluationExecutor({
       repository,
       baseUrl: "https://api.example.com",
@@ -109,9 +118,11 @@ describe("evaluation executor", () => {
       production: true,
       allowPrivateNetwork: false,
       timeoutMs: 10_000,
-      fetchImpl: vi.fn(() =>
-        Promise.resolve(new Response(JSON.stringify(responses.shift()), { status: 200 })),
-      ),
+      fetchImpl: vi.fn<typeof fetch>((_input, init) => {
+        const body = init?.body;
+        requests.push(JSON.parse(typeof body === "string" ? body : "") as Record<string, unknown>);
+        return Promise.resolve(new Response(JSON.stringify(responses.shift()), { status: 200 }));
+      }),
     });
 
     await expect(executor.execute("eval-run", logger)).resolves.toMatchObject({
@@ -130,6 +141,7 @@ describe("evaluation executor", () => {
     expect(savedRecord.status).toBe("succeeded");
     expect(savedRecord.outputText).toBe("world");
     expect(savedRecord.outputHash).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/u));
+    expect(requests[0]).toMatchObject({ temperature: 0, max_tokens: 128 });
   });
 
   it("does not execute a run that another worker already claimed", async () => {
@@ -151,6 +163,63 @@ describe("evaluation executor", () => {
       failedCount: 0,
     });
     expect(repository.saved).toHaveLength(0);
+  });
+
+  it("retries transient provider failures without duplicating persisted cases", async () => {
+    const repository = createRepository(createSnapshot());
+    const responses = [
+      new Response("temporary outage", { status: 503 }),
+      new Response(
+        JSON.stringify({
+          id: "request-1",
+          model: "test-model",
+          choices: [{ message: { content: "world" } }],
+        }),
+        { status: 200 },
+      ),
+      new Response(
+        JSON.stringify({
+          id: "judge-1",
+          model: "test-model",
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  scores: [
+                    {
+                      metricKey: "quality",
+                      score: 1,
+                      rationale: "good",
+                      evidence: ["world"],
+                      confidence: 1,
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    ];
+    const executor = createEvaluationExecutor({
+      repository,
+      baseUrl: "https://api.example.com",
+      apiKey: "provider-test-key-that-is-long-enough",
+      production: true,
+      allowPrivateNetwork: false,
+      timeoutMs: 10_000,
+      retryDelayMs: 0,
+      fetchImpl: vi.fn(() =>
+        Promise.resolve(responses.shift() ?? new Response("unexpected", { status: 500 })),
+      ),
+    });
+
+    await expect(executor.execute("eval-run", logger)).resolves.toMatchObject({
+      succeededCount: 1,
+      failedCount: 0,
+    });
+    expect(repository.saved).toHaveLength(1);
   });
 });
 

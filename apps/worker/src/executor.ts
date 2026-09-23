@@ -4,7 +4,7 @@ import {
   ProviderError,
   type ChatMessage,
 } from "@prompt-regression/model-provider";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { evaluateGeneratedOutput } from "./evaluator.js";
 import type { Logger } from "./logger.js";
@@ -16,6 +16,10 @@ export interface EvaluationExecutorOptions {
   readonly production: boolean;
   readonly allowPrivateNetwork: boolean;
   readonly timeoutMs: number;
+  /** Maximum attempts for transient provider failures. Kept small to bound cost. */
+  readonly maxProviderAttempts?: number;
+  /** Initial delay between transient provider attempts. */
+  readonly retryDelayMs?: number;
   readonly fetchImpl?: typeof fetch;
 }
 
@@ -76,11 +80,19 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
 
           let response;
           try {
-            response = await client.complete({
-              model: snapshot.generationRun.model,
-              messages,
-            });
+            response = await completeWithRetry(
+              client,
+              {
+                model: snapshot.generationRun.model,
+                messages,
+                ...readModelConfig(snapshot.generationRun.modelConfig),
+              },
+              options.maxProviderAttempts ?? 3,
+              options.retryDelayMs ?? 250,
+            );
+            const outputId = randomUUID();
             const output: SaveGenerationOutputInput = {
+              id: outputId,
               generationRunId: snapshot.generationRun.id,
               caseId: evaluationCase.id,
               request: requestForPersistence,
@@ -102,21 +114,27 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               status: "succeeded",
               attemptCount: 1,
             };
-            const savedOutput = await options.repository.saveGenerationOutput(output);
             const evaluatorModel = readEvaluatorModel(
               snapshot.evaluationRun.evaluatorConfig,
               snapshot.generationRun.model,
             );
             const scored = await evaluateGeneratedOutput({
               client,
+              complete: (request) =>
+                completeWithRetry(
+                  client,
+                  request,
+                  options.maxProviderAttempts ?? 3,
+                  options.retryDelayMs ?? 250,
+                ),
               evaluationRunId,
-              generationOutputId: savedOutput.id,
+              generationOutputId: outputId,
               evaluatorModel,
               framework: snapshot.frameworkVersion.definition,
               expectedOutput: evaluationCase.expectedOutput,
               outputText: response.text,
             });
-            await options.repository.saveScores(scored.scores);
+            await options.repository.saveGenerationOutputAndScores(output, scored.scores);
             succeededCount += 1;
           } catch (error) {
             const failure = normalizeFailure(error);
@@ -163,6 +181,42 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
       }
     },
   };
+}
+
+async function completeWithRetry(
+  client: OpenAICompatibleClient,
+  request: Parameters<OpenAICompatibleClient["complete"]>[0],
+  maxAttempts: number,
+  retryDelayMs: number,
+) {
+  const attempts = Number.isSafeInteger(maxAttempts) ? Math.max(1, Math.min(maxAttempts, 5)) : 3;
+  const delay = Number.isFinite(retryDelayMs) ? Math.max(0, Math.min(retryDelayMs, 10_000)) : 250;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await client.complete(request);
+    } catch (error) {
+      if (!(error instanceof ProviderError) || !error.retryable || attempt >= attempts) throw error;
+      const backoff = Math.min(delay * 2 ** (attempt - 1), 10_000);
+      await new Promise<void>((resolve) => setTimeout(resolve, backoff));
+    }
+  }
+  throw new Error("Provider retry loop exhausted");
+}
+
+function readModelConfig(value: Record<string, JsonValue>): {
+  readonly temperature?: number;
+  readonly maxTokens?: number;
+} {
+  const result: { temperature?: number; maxTokens?: number } = {};
+  const temperature = value.temperature;
+  if (typeof temperature === "number" && Number.isFinite(temperature)) {
+    result.temperature = temperature;
+  }
+  const maxTokens = value.maxTokens ?? value.max_tokens;
+  if (typeof maxTokens === "number" && Number.isSafeInteger(maxTokens)) {
+    result.maxTokens = maxTokens;
+  }
+  return result;
 }
 
 function readEvaluatorModel(value: Record<string, JsonValue>, fallback: string): string {
