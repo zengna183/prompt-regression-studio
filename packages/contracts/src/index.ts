@@ -192,6 +192,55 @@ export const CreateFrameworkVersionSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ExperimentStatusSchema = Type.Union([
+  Type.Literal("draft"),
+  Type.Literal("queued"),
+  Type.Literal("running"),
+  Type.Literal("succeeded"),
+  Type.Literal("failed"),
+  Type.Literal("cancelled"),
+]);
+
+export const ExperimentPromptVersionSchema = Type.Object(
+  {
+    promptVersionId: UuidSchema,
+    label: Type.String({ minLength: 1, maxLength: 120 }),
+    isBaseline: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+export const CreateExperimentSchema = Type.Object(
+  {
+    datasetVersionId: UuidSchema,
+    frameworkVersionId: UuidSchema,
+    name: Type.String({ minLength: 2, maxLength: 240 }),
+    description: Type.Optional(Type.String({ maxLength: 1000 })),
+    randomSeed: Type.Integer({ minimum: -9_007_199_254_740_991, maximum: 9_007_199_254_740_991 }),
+    repetitions: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    config: Type.Optional(Type.Record(Type.String({ maxLength: 120 }), Type.Unknown())),
+    promptVersions: Type.Array(ExperimentPromptVersionSchema, { minItems: 1, maxItems: 20 }),
+  },
+  { additionalProperties: false },
+);
+
+export const ExperimentSchema = Type.Object(
+  {
+    id: UuidSchema,
+    projectId: UuidSchema,
+    datasetVersionId: UuidSchema,
+    frameworkVersionId: UuidSchema,
+    name: Type.String(),
+    description: Type.Union([Type.String(), Type.Null()]),
+    status: ExperimentStatusSchema,
+    randomSeed: Type.Integer(),
+    repetitions: Type.Integer({ minimum: 1 }),
+    createdAt: IsoDateSchema,
+    updatedAt: IsoDateSchema,
+  },
+  { additionalProperties: false },
+);
+
 export type Project = Static<typeof ProjectSchema>;
 export type CreateProject = Static<typeof CreateProjectSchema>;
 export type Prompt = Static<typeof PromptSchema>;
@@ -204,3 +253,6 @@ export type EvaluationFramework = Static<typeof EvaluationFrameworkSchema>;
 export type FrameworkVersion = Static<typeof FrameworkVersionSchema>;
 export type CreateFramework = Static<typeof CreateFrameworkSchema>;
 export type CreateFrameworkVersion = Static<typeof CreateFrameworkVersionSchema>;
+export type ExperimentPromptVersion = Static<typeof ExperimentPromptVersionSchema>;
+export type CreateExperiment = Static<typeof CreateExperimentSchema>;
+export type Experiment = Static<typeof ExperimentSchema>;
