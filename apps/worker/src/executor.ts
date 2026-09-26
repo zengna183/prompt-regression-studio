@@ -20,6 +20,8 @@ export interface EvaluationExecutorOptions {
   readonly maxProviderAttempts?: number;
   /** Initial delay between transient provider attempts. */
   readonly retryDelayMs?: number;
+  /** A running task older than this is considered abandoned and may be reclaimed. */
+  readonly staleRunAfterMs?: number;
   readonly fetchImpl?: typeof fetch;
 }
 
@@ -55,7 +57,12 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
         throw new Error("Evaluation job generation run does not match its evaluation run");
       }
 
-      const claimed = await options.repository.claimEvaluation(evaluationRunId);
+      const claimed = await options.repository.claimEvaluation(
+        evaluationRunId,
+        options.staleRunAfterMs === undefined
+          ? undefined
+          : { staleAfterMs: options.staleRunAfterMs },
+      );
       if (!claimed) {
         return { status: "already_claimed", succeededCount: 0, failedCount: 0 };
       }
