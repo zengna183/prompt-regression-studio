@@ -47,6 +47,9 @@ importers:
       '@ai-chat-eval/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ai-chat-eval/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
       '@fastify/cors':
         specifier: 11.3.0
         version: 11.3.0
