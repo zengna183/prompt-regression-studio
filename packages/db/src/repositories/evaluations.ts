@@ -166,7 +166,7 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
         .values(values)
         .onConflictDoUpdate({
           target: [generationOutputs.generationRunId, generationOutputs.caseId],
-          set: values,
+          set: generationOutputUpdateValues(input),
         })
         .returning();
       if (!saved) throw new Error("PostgreSQL did not return the generation output");
@@ -181,7 +181,7 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
           .values(values)
           .onConflictDoUpdate({
             target: [generationOutputs.generationRunId, generationOutputs.caseId],
-            set: values,
+            set: generationOutputUpdateValues(output),
           })
           .returning();
         if (!savedOutput) throw new Error("PostgreSQL did not return the generation output");
@@ -190,7 +190,7 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
         for (const score of scoreInputs) {
           const [created] = await tx
             .insert(scores)
-            .values(score)
+            .values({ ...score, generationOutputId: savedOutput.id })
             .onConflictDoUpdate({
               target: [
                 scores.evaluationRunId,
@@ -343,4 +343,11 @@ function generationOutputValues(input: SaveGenerationOutputInput) {
     attemptCount: input.attemptCount,
     completedAt: new Date(),
   };
+}
+
+/** A retry must never replace an existing output primary key referenced by scores. */
+function generationOutputUpdateValues(input: SaveGenerationOutputInput) {
+  const values = generationOutputValues(input);
+  delete values.id;
+  return values;
 }
