@@ -15,7 +15,7 @@ import {
   type DiagnosisOptions,
   type JsonObject,
 } from "@prompt-regression/diagnosis-engine";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildApp, type BuildAppOptions } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
@@ -255,6 +255,41 @@ describe("API", () => {
       slug: "customer-support",
       name: "Customer Support",
     });
+    await app.close();
+  });
+
+  it("queues an existing evaluation through the configured dispatcher", async () => {
+    const dispatch = vi.fn(() => Promise.resolve());
+    const app = await buildTestApp(
+      new TestCatalog(),
+      new RecordingDiagnosisEngine(),
+      2,
+      undefined,
+      { evaluationDispatcher: { dispatch } },
+    );
+    const evaluationRunId = "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5";
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/evaluation-runs/${evaluationRunId}/dispatch`,
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ evaluationRunId, status: "queued" });
+    expect(response.headers.location).toBe(`/v1/evaluation-runs/${evaluationRunId}`);
+    expect(dispatch).toHaveBeenCalledWith(evaluationRunId);
+    await app.close();
+  });
+
+  it("does not claim successful dispatch when the service is unavailable", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/evaluation-runs/4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5/dispatch",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ code: "EVALUATION_DISPATCH_UNAVAILABLE" });
     await app.close();
   });
 

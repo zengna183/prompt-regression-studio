@@ -26,6 +26,13 @@ const webOrigin = z
     message: "WEB_ORIGIN must not contain credentials",
   });
 
+const redisUrl = z
+  .string()
+  .url()
+  .refine((value) => ["redis:", "rediss:"].includes(new URL(value).protocol), {
+    message: "REDIS_URL must use redis:// or rediss://",
+  });
+
 function isSafeAuthToken(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;
@@ -52,6 +59,7 @@ const RawConfigSchema = z
     API_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100_000).default(120),
     API_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
     API_TRUST_PROXY: optionalBoolean.default(false),
+    REDIS_URL: redisUrl.default("redis://127.0.0.1:6379"),
     DIAGNOSIS_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(10_000).default(10),
     WEB_ORIGIN: webOrigin.default("http://localhost:5173"),
     LOG_LEVEL: z

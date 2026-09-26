@@ -1,13 +1,16 @@
-import { createDatabaseClient } from "@ai-chat-eval/db";
+import { createDatabaseClient, createEvaluationRepository } from "@ai-chat-eval/db";
+import { createEvaluationQueue } from "@ai-chat-eval/queue";
 import { PythonProcessDiagnosisEngine } from "@prompt-regression/diagnosis-engine";
 
 import { buildApp } from "./app.js";
 import { loadApiConfig } from "./config.js";
 import { createDatabaseCatalog } from "./database-catalog.js";
 import { createDatabaseDiagnosisStore } from "./database-diagnosis-store.js";
+import { createDatabaseEvaluationDispatcher } from "./evaluation-dispatcher.js";
 
 const config = loadApiConfig();
 const database = createDatabaseClient();
+const evaluationQueue = createEvaluationQueue(config.REDIS_URL);
 const diagnosisEngine = new PythonProcessDiagnosisEngine({
   executable: config.DIAGNOSIS_PYTHON_EXECUTABLE,
   moduleArgs: ["-m", "prompt_regression_core"],
@@ -23,6 +26,10 @@ const app = await buildApp({
   catalog: createDatabaseCatalog(database.db),
   diagnosisEngine,
   diagnosisStore: createDatabaseDiagnosisStore(database.db),
+  evaluationDispatcher: createDatabaseEvaluationDispatcher(
+    createEvaluationRepository(database.db),
+    evaluationQueue,
+  ),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
   bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
   docsEnabled: config.API_DOCS_ENABLED,
@@ -62,6 +69,7 @@ async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, "shutting down API");
   try {
     await app.close();
+    await evaluationQueue.close();
     await database.close();
   } catch (error) {
     app.log.error({ err: error }, "API shutdown failed");
