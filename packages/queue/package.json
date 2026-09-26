@@ -19,7 +19,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "bullmq": "6.3.4",
+    "bullmq": "6.3.8",
     "ioredis": "6.0.0"
   }
 }
