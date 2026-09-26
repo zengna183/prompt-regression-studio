@@ -17,16 +17,19 @@ import Fastify, {
 import type { CatalogService, ReadinessCheck } from "./catalog-service.js";
 import type { DiagnosisStore } from "./diagnosis-store.js";
 import type { EvaluationDispatcher } from "./evaluation-dispatcher.js";
+import type { ExperimentService } from "./experiment-service.js";
 import { ApiError } from "./errors.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { diagnosisRoutes } from "./routes/diagnoses.js";
 import { evaluationRoutes } from "./routes/evaluations.js";
+import { experimentRoutes } from "./routes/experiments.js";
 
 export interface BuildAppOptions {
   catalog: CatalogService;
   diagnosisEngine: DiagnosisEngine;
   diagnosisStore?: DiagnosisStore;
   evaluationDispatcher?: EvaluationDispatcher;
+  experimentService?: ExperimentService;
   maxConcurrentDiagnoses: number;
   readiness?: ReadinessCheck;
   webOrigin?: string;
@@ -205,6 +208,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }),
   );
   await app.register(evaluationRoutes(options.evaluationDispatcher));
+  await app.register(experimentRoutes(options.experimentService));
 
   return app;
 }

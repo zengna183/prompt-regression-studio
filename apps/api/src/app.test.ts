@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildApp, type BuildAppOptions } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
+import type { ExperimentService } from "./experiment-service.js";
 import type {
   DiagnosisRunDetail,
   DiagnosisRunSummary,
@@ -281,6 +282,43 @@ describe("API", () => {
     await app.close();
   });
 
+  it("creates an experiment plan through the configured service", async () => {
+    const create = vi.fn(() =>
+      Promise.resolve({
+        id: randomUUID(),
+        projectId: "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5",
+        datasetVersionId: "69d92e0c-cb85-49e9-94c6-c85082377a3a",
+        frameworkVersionId: "d159a2ed-d20c-4296-bd7e-28d20b508c1d",
+        name: "Support comparison",
+        description: null,
+        status: "draft" as const,
+        randomSeed: 42,
+        repetitions: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const service: ExperimentService = { create };
+    const app = await buildTestApp(
+      new TestCatalog(),
+      new RecordingDiagnosisEngine(),
+      2,
+      undefined,
+      { experimentService: service },
+    );
+    const projectId = "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5";
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/experiments`,
+      payload: experimentRequest,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ name: "Support comparison", status: "draft" });
+    expect(create).toHaveBeenCalledWith(projectId, experimentRequest);
+    await app.close();
+  });
+
   it("does not claim successful dispatch when the service is unavailable", async () => {
     const app = await buildTestApp();
     const response = await app.inject({
@@ -450,6 +488,20 @@ describe("API", () => {
 const canonicalBundle = {
   schema_version: "prompt-regression.bundle/v1alpha1",
   bundle_id: "bundle_test",
+} as const;
+
+const experimentRequest = {
+  datasetVersionId: "69d92e0c-cb85-49e9-94c6-c85082377a3a",
+  frameworkVersionId: "d159a2ed-d20c-4296-bd7e-28d20b508c1d",
+  name: "Support comparison",
+  randomSeed: 42,
+  promptVersions: [
+    {
+      promptVersionId: "023edc7e-f870-4228-91a6-5a4e5de0c22a",
+      label: "baseline",
+      isBaseline: true,
+    },
+  ],
 } as const;
 
 const diagnosisReport = {

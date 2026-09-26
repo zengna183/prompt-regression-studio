@@ -7,6 +7,7 @@ import { loadApiConfig } from "./config.js";
 import { createDatabaseCatalog } from "./database-catalog.js";
 import { createDatabaseDiagnosisStore } from "./database-diagnosis-store.js";
 import { createDatabaseEvaluationDispatcher } from "./evaluation-dispatcher.js";
+import { createDatabaseExperimentService } from "./database-experiment-service.js";
 
 const config = loadApiConfig();
 const database = createDatabaseClient();
@@ -30,6 +31,7 @@ const app = await buildApp({
     createEvaluationRepository(database.db),
     evaluationQueue,
   ),
+  experimentService: createDatabaseExperimentService(database.db),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
   bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
   docsEnabled: config.API_DOCS_ENABLED,
