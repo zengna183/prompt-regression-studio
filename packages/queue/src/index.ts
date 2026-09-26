@@ -17,6 +17,7 @@ export interface ReevaluateGenerationJob {
 }
 
 export type EvaluationJob = RunEvaluationJob | ReevaluateGenerationJob;
+export type EvaluationQueue = Pick<Queue<EvaluationJob>, "add">;
 
 export function createRedisConnection(redisUrl: string): Redis {
   return new Redis(redisUrl, {
@@ -39,13 +40,8 @@ export function createEvaluationQueue(redisUrl: string): Queue<EvaluationJob> {
   });
 }
 
-/**
- * Schedules a run exactly once from the API boundary. The stable job id makes
- * a client retry safe: BullMQ will not create a second concurrent execution
- * for the same evaluation run.
- */
 export async function enqueueEvaluationRun(
-  queue: Pick<Queue<EvaluationJob>, "add">,
+  queue: EvaluationQueue,
   evaluationRunId: string,
   requestedAt = new Date().toISOString(),
 ): Promise<void> {
@@ -54,7 +50,7 @@ export async function enqueueEvaluationRun(
   await queue.add(
     "evaluation.run",
     { type: "evaluation.run", evaluationRunId, requestedAt },
-    { jobId: `evaluation:${evaluationRunId}` },
+    { jobId: "evaluation:" + evaluationRunId },
   );
 }
 
@@ -66,7 +62,7 @@ export function assertEvaluationJob(value: unknown): asserts value is Evaluation
   const fields = value as Record<string, unknown>;
   const type = fields.type;
   if (type !== "evaluation.run" && type !== "evaluation.reevaluate") {
-    throw new Error(`Unsupported evaluation job type: ${String(type)}`);
+    throw new Error("Unsupported evaluation job type: " + String(type));
   }
 
   const expectedKeys =
@@ -93,7 +89,7 @@ const isoDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 
 function assertUuid(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || !uuidPattern.test(value)) {
-    throw new Error(`${name} must be a valid UUID`);
+    throw new Error(name + " must be a valid UUID");
   }
 }
 
