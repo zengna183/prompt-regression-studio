@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull, lt, or } from "drizzle-orm";
 
 import type { Database } from "../client.js";
 import { EntityNotFoundError } from "../errors.js";
@@ -64,7 +64,10 @@ export interface SaveScoreInput {
 
 export interface EvaluationRepository {
   getExecutionSnapshot(evaluationRunId: string): Promise<EvaluationExecutionSnapshot | null>;
-  claimEvaluation(evaluationRunId: string): Promise<EvaluationRun | null>;
+  claimEvaluation(
+    evaluationRunId: string,
+    options?: { readonly staleAfterMs?: number },
+  ): Promise<EvaluationRun | null>;
   startGenerationRun(generationRunId: string): Promise<GenerationRun>;
   saveGenerationOutput(input: SaveGenerationOutputInput): Promise<GenerationOutput>;
   /** Atomically persists a successful output and all of its scores. */
@@ -122,11 +125,26 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
       return { ...joined, cases };
     },
 
-    async claimEvaluation(evaluationRunId) {
+    async claimEvaluation(evaluationRunId, options) {
+      const staleAfterMs = normalizeStaleAfter(options?.staleAfterMs);
+      const now = new Date();
+      const staleBefore = new Date(now.getTime() - staleAfterMs);
       const [claimed] = await db
         .update(evaluationRuns)
-        .set({ status: "running", startedAt: new Date() })
-        .where(and(eq(evaluationRuns.id, evaluationRunId), eq(evaluationRuns.status, "queued")))
+        .set({ status: "running", startedAt: now })
+        .where(
+          and(
+            eq(evaluationRuns.id, evaluationRunId),
+            or(
+              eq(evaluationRuns.status, "queued"),
+              and(
+                eq(evaluationRuns.status, "running"),
+                isNotNull(evaluationRuns.startedAt),
+                lt(evaluationRuns.startedAt, staleBefore),
+              ),
+            ),
+          ),
+        )
         .returning();
       return claimed ?? null;
     },
@@ -296,6 +314,14 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
       return failed;
     },
   };
+}
+
+function normalizeStaleAfter(value: number | undefined): number {
+  if (value === undefined) return 30 * 60_000;
+  if (!Number.isSafeInteger(value) || value < 60_000 || value > 24 * 60 * 60_000) {
+    throw new Error("staleAfterMs must be between 60000 and 86400000");
+  }
+  return value;
 }
 
 function generationOutputValues(input: SaveGenerationOutputInput) {
