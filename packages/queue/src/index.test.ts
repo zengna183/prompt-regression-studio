@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { assertEvaluationJob } from "./index.js";
+import { assertEvaluationJob, enqueueEvaluationRun } from "./index.js";
 
 describe("assertEvaluationJob", () => {
   it("accepts a supported evaluation job", () => {
@@ -54,5 +54,36 @@ describe("assertEvaluationJob", () => {
         requestedAt: "2026-09-12T00:00:00.000Z",
       }),
     ).not.toThrow();
+  });
+});
+
+describe("enqueueEvaluationRun", () => {
+  it("creates one safely identifiable evaluation job", async () => {
+    const add = vi.fn(() => Promise.resolve({}));
+
+    await enqueueEvaluationRun(
+      { add } as never,
+      "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5",
+      "2026-09-12T00:00:00.000Z",
+    );
+
+    expect(add).toHaveBeenCalledWith(
+      "evaluation.run",
+      {
+        type: "evaluation.run",
+        evaluationRunId: "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5",
+        requestedAt: "2026-09-12T00:00:00.000Z",
+      },
+      { jobId: "evaluation:4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5" },
+    );
+  });
+
+  it("rejects malformed identifiers before they reach Redis", async () => {
+    const add = vi.fn(() => Promise.resolve({}));
+
+    await expect(enqueueEvaluationRun({ add } as never, "not-a-uuid")).rejects.toThrow(
+      "evaluationRunId",
+    );
+    expect(add).not.toHaveBeenCalled();
   });
 });

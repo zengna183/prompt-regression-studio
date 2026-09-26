@@ -39,6 +39,25 @@ export function createEvaluationQueue(redisUrl: string): Queue<EvaluationJob> {
   });
 }
 
+/**
+ * Schedules a run exactly once from the API boundary. The stable job id makes
+ * a client retry safe: BullMQ will not create a second concurrent execution
+ * for the same evaluation run.
+ */
+export async function enqueueEvaluationRun(
+  queue: Pick<Queue<EvaluationJob>, "add">,
+  evaluationRunId: string,
+  requestedAt = new Date().toISOString(),
+): Promise<void> {
+  assertUuid(evaluationRunId, "evaluationRunId");
+  assertIsoDateTime(requestedAt);
+  await queue.add(
+    "evaluation.run",
+    { type: "evaluation.run", evaluationRunId, requestedAt },
+    { jobId: `evaluation:${evaluationRunId}` },
+  );
+}
+
 export function assertEvaluationJob(value: unknown): asserts value is EvaluationJob {
   if (!value || typeof value !== "object" || Array.isArray(value) || !("type" in value)) {
     throw new Error("Evaluation job payload must be an object with a type field");
