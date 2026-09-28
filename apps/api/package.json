@@ -19,12 +19,12 @@
     "@fastify/helmet": "13.1.1",
     "@fastify/rate-limit": "11.2.0",
     "@fastify/sensible": "6.0.5",
-    "@fastify/swagger": "9.8.1",
+    "@fastify/swagger": "9.9.0",
     "@fastify/swagger-ui": "6.1.1",
     "@fastify/type-provider-typebox": "6.1.0",
     "@prompt-regression/diagnosis-engine": "workspace:*",
     "@sinclair/typebox": "0.34.52",
-    "fastify": "5.12.4",
-    "zod": "4.6.2"
+    "fastify": "5.12.5",
+    "zod": "4.6.5"
   }
 }
