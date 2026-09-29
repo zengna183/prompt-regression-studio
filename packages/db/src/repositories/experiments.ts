@@ -1,20 +1,23 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "../client.js";
-import { EntityNotFoundError } from "../errors.js";
+import { EntityNotFoundError, InvalidVersionStateError, RepositoryConflictError } from "../errors.js";
 import {
   datasets,
   datasetVersions,
+  evaluationCases,
   evaluationFrameworks,
   evaluationFrameworkVersions,
+  evaluationRuns,
   experimentPromptVersions,
   experiments,
+  generationRuns,
   projects,
   prompts,
   promptVersions,
   type JsonValue,
 } from "../schema.js";
-import { stableStringify } from "../versioning.js";
+import { hashVersionContent, stableStringify } from "../versioning.js";
 import { normalizeDescription } from "./common.js";
 
 export interface ExperimentPromptVersionInput {
@@ -38,7 +41,28 @@ export interface CreateExperimentInput {
 
 export interface ExperimentRepository {
   create(input: CreateExperimentInput): Promise<typeof experiments.$inferSelect>;
+  start(input: StartExperimentInput): Promise<StartedExperiment>;
 }
+
+export interface StartExperimentInput {
+  readonly projectId: string;
+  readonly experimentId: string;
+  readonly provider: "openai-compatible";
+  readonly model: string;
+  readonly modelConfig?: {
+    readonly temperature?: number;
+    readonly maxTokens?: number;
+  };
+  readonly evaluatorModel?: string;
+}
+
+export interface StartedExperiment {
+  readonly experiment: typeof experiments.$inferSelect;
+  readonly evaluationRunIds: readonly string[];
+}
+
+const MAX_EXPERIMENT_RUNS = 100;
+const MAX_CASE_EXECUTIONS = 5_000;
 
 /**
  * Creates a reproducible comparison plan. Every referenced version must be
@@ -137,7 +161,171 @@ export function createExperimentRepository(db: Database): ExperimentRepository {
         return created;
       });
     },
+
+    async start(input) {
+      const config = normalizeStartExperiment(input);
+      return db.transaction(async (tx) => {
+        const [experiment] = await tx
+          .select()
+          .from(experiments)
+          .where(and(eq(experiments.id, input.experimentId), eq(experiments.projectId, input.projectId)))
+          .for("update")
+          .limit(1);
+        if (!experiment) throw new EntityNotFoundError("Experiment", input.experimentId);
+
+        const selectedPrompts = await tx
+          .select({ promptVersionId: experimentPromptVersions.promptVersionId })
+          .from(experimentPromptVersions)
+          .where(eq(experimentPromptVersions.experimentId, experiment.id));
+        assertRunBudget(selectedPrompts.length, experiment.repetitions);
+
+        if (experiment.status === "queued") {
+          const existing = await tx
+            .select({
+              evaluationRunId: evaluationRuns.id,
+              provider: generationRuns.provider,
+              model: generationRuns.model,
+              modelConfigHash: generationRuns.modelConfigHash,
+              evaluatorConfigHash: evaluationRuns.evaluatorConfigHash,
+            })
+            .from(evaluationRuns)
+            .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
+            .where(eq(evaluationRuns.experimentId, experiment.id));
+          if (
+            existing.length !== selectedPrompts.length * experiment.repetitions ||
+            existing.some(
+              (run) =>
+                run.provider !== config.provider ||
+                run.model !== config.model ||
+                run.modelConfigHash !== config.modelConfigHash ||
+                run.evaluatorConfigHash !== config.evaluatorConfigHash,
+            )
+          ) {
+            throw new RepositoryConflictError(
+              "EXPERIMENT_ALREADY_STARTED",
+              "The experiment was already started with a different configuration.",
+            );
+          }
+          return { experiment, evaluationRunIds: existing.map((run) => run.evaluationRunId) };
+        }
+        if (experiment.status !== "draft") {
+          throw new InvalidVersionStateError(
+            experiment.status,
+            `Cannot start an experiment in ${experiment.status} status`,
+          );
+        }
+        const [datasetSize] = await tx
+          .select({ caseCount: count() })
+          .from(evaluationCases)
+          .where(eq(evaluationCases.datasetVersionId, experiment.datasetVersionId));
+        assertCaseBudget(selectedPrompts.length * experiment.repetitions, datasetSize?.caseCount ?? 0);
+
+        const evaluationRunIds: string[] = [];
+        for (const selectedPrompt of selectedPrompts) {
+          for (let repetition = 1; repetition <= experiment.repetitions; repetition += 1) {
+            const [generationRun] = await tx
+              .insert(generationRuns)
+              .values({
+                experimentId: experiment.id,
+                promptVersionId: selectedPrompt.promptVersionId,
+                provider: config.provider,
+                model: config.model,
+                modelConfig: config.modelConfig,
+                modelConfigHash: config.modelConfigHash,
+                repetition,
+                idempotencyKey: `generation:${experiment.id}:${selectedPrompt.promptVersionId}:${repetition}`,
+              })
+              .returning({ id: generationRuns.id });
+            if (!generationRun) throw new Error("PostgreSQL did not return the generation run");
+            const [evaluationRun] = await tx
+              .insert(evaluationRuns)
+              .values({
+                experimentId: experiment.id,
+                generationRunId: generationRun.id,
+                frameworkVersionId: experiment.frameworkVersionId,
+                evaluatorKey: "llm-judge",
+                evaluatorVersion: "1",
+                evaluatorConfig: config.evaluatorConfig,
+                evaluatorConfigHash: config.evaluatorConfigHash,
+                idempotencyKey: `evaluation:${generationRun.id}:${experiment.frameworkVersionId}`,
+              })
+              .returning({ id: evaluationRuns.id });
+            if (!evaluationRun) throw new Error("PostgreSQL did not return the evaluation run");
+            evaluationRunIds.push(evaluationRun.id);
+          }
+        }
+        const [queued] = await tx
+          .update(experiments)
+          .set({ status: "queued", startedAt: new Date(), updatedAt: new Date() })
+          .where(eq(experiments.id, experiment.id))
+          .returning();
+        if (!queued) throw new Error("PostgreSQL did not return the queued experiment");
+        return { experiment: queued, evaluationRunIds };
+      });
+    },
   };
+}
+
+export function normalizeStartExperiment(input: StartExperimentInput) {
+  if (input.provider !== "openai-compatible") {
+    throw new TypeError("Only the openai-compatible provider is supported");
+  }
+  const model = input.model.trim();
+  if (model.length === 0 || model.length > 240) {
+    throw new TypeError("model must be 1-240 characters");
+  }
+  const modelConfig = input.modelConfig ?? {};
+  if (Object.keys(modelConfig).some((key) => key !== "temperature" && key !== "maxTokens")) {
+    throw new TypeError("modelConfig contains unsupported options");
+  }
+  if (
+    modelConfig.temperature !== undefined &&
+    (!Number.isFinite(modelConfig.temperature) ||
+      modelConfig.temperature < 0 ||
+      modelConfig.temperature > 2)
+  ) {
+    throw new TypeError("temperature must be between 0 and 2");
+  }
+  if (
+    modelConfig.maxTokens !== undefined &&
+    (!Number.isSafeInteger(modelConfig.maxTokens) ||
+      modelConfig.maxTokens < 1 ||
+      modelConfig.maxTokens > 8192)
+  ) {
+    throw new TypeError("maxTokens must be an integer between 1 and 8192");
+  }
+  const evaluatorModel = (input.evaluatorModel ?? model).trim();
+  if (evaluatorModel.length === 0 || evaluatorModel.length > 240) {
+    throw new TypeError("evaluatorModel must be 1-240 characters");
+  }
+  const evaluatorConfig = { model: evaluatorModel };
+  return {
+    provider: input.provider,
+    model,
+    modelConfig,
+    modelConfigHash: hashVersionContent(modelConfig),
+    evaluatorConfig,
+    evaluatorConfigHash: hashVersionContent(evaluatorConfig),
+  };
+}
+
+export function assertRunBudget(promptVersionCount: number, repetitions: number): void {
+  const runCount = promptVersionCount * repetitions;
+  if (
+    !Number.isSafeInteger(runCount) ||
+    promptVersionCount < 1 ||
+    repetitions < 1 ||
+    runCount > MAX_EXPERIMENT_RUNS
+  ) {
+    throw new TypeError(`An experiment may create 1-${MAX_EXPERIMENT_RUNS} runs`);
+  }
+}
+
+export function assertCaseBudget(runCount: number, caseCount: number): void {
+  const total = runCount * caseCount;
+  if (!Number.isSafeInteger(total) || caseCount < 1 || total > MAX_CASE_EXECUTIONS) {
+    throw new TypeError(`An experiment may execute 1-${MAX_CASE_EXECUTIONS} evaluation cases`);
+  }
 }
 
 export function normalizeCreateExperiment(input: CreateExperimentInput) {
