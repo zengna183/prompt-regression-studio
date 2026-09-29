@@ -50,7 +50,7 @@ export async function enqueueEvaluationRun(
   await queue.add(
     "evaluation.run",
     { type: "evaluation.run", evaluationRunId, requestedAt },
-    { jobId: "evaluation:" + evaluationRunId },
+    { jobId: "evaluation-" + evaluationRunId },
   );
 }
 

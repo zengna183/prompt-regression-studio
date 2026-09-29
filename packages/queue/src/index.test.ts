@@ -74,7 +74,7 @@ describe("enqueueEvaluationRun", () => {
         evaluationRunId: "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5",
         requestedAt: "2026-09-12T00:00:00.000Z",
       },
-      { jobId: "evaluation:4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5" },
+      { jobId: "evaluation-4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5" },
     );
   });
 
