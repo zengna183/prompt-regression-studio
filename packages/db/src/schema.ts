@@ -535,6 +535,38 @@ export const evaluationRuns = pgTable(
   ],
 );
 
+/** Durable handoff from the database transaction to the Redis evaluation queue. */
+export const evaluationRunDispatches = pgTable(
+  "evaluation_run_dispatches",
+  {
+    evaluationRunId: uuid("evaluation_run_id")
+      .primaryKey()
+      .references(() => evaluationRuns.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true, mode: "date" }),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true, mode: "date" }),
+    lastErrorCode: varchar("last_error_code", { length: 120 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("evaluation_dispatches_pending_idx").on(
+      table.status,
+      table.nextAttemptAt,
+      table.createdAt,
+    ),
+    check(
+      "evaluation_dispatches_status_valid",
+      sql`${table.status} in ('pending', 'dispatching', 'dispatched')`,
+    ),
+    check("evaluation_dispatches_attempts_nonnegative", sql`${table.attemptCount} >= 0`),
+  ],
+);
+
 export const scores = pgTable(
   "scores",
   {
@@ -845,6 +877,7 @@ export type Experiment = InferSelectModel<typeof experiments>;
 export type GenerationRun = InferSelectModel<typeof generationRuns>;
 export type GenerationOutput = InferSelectModel<typeof generationOutputs>;
 export type EvaluationRun = InferSelectModel<typeof evaluationRuns>;
+export type EvaluationRunDispatch = InferSelectModel<typeof evaluationRunDispatches>;
 export type Score = InferSelectModel<typeof scores>;
 export type DiagnosisRun = InferSelectModel<typeof diagnosisRuns>;
 export type NewDiagnosisRun = InferInsertModel<typeof diagnosisRuns>;

@@ -9,19 +9,13 @@ if (!process.env.DATABASE_URL) {
   }
 }
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required to run Drizzle commands");
-}
+const databaseUrl = process.env.DATABASE_URL?.trim();
 
 export default defineConfig({
   dialect: "postgresql",
   schema: "./src/schema.ts",
   out: "./drizzle",
-  dbCredentials: {
-    url: databaseUrl,
-  },
+  ...(databaseUrl ? { dbCredentials: { url: databaseUrl } } : {}),
   migrations: {
     table: "__drizzle_migrations",
     schema: "public",

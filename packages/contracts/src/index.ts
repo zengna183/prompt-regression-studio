@@ -241,6 +241,39 @@ export const ExperimentSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const StartExperimentSchema = Type.Object(
+  {
+    provider: Type.Literal("openai-compatible"),
+    model: Type.String({ minLength: 1, maxLength: 240 }),
+    modelConfig: Type.Optional(
+      Type.Object(
+        {
+          temperature: Type.Optional(Type.Number({ minimum: 0, maximum: 2 })),
+          maxTokens: Type.Optional(Type.Integer({ minimum: 1, maximum: 8192 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    evaluatorModel: Type.Optional(Type.String({ minLength: 1, maxLength: 240 })),
+  },
+  { additionalProperties: false },
+);
+
+export const StartedExperimentSchema = Type.Object(
+  {
+    experimentId: UuidSchema,
+    status: Type.Union([
+      Type.Literal("queued"),
+      Type.Literal("running"),
+      Type.Literal("succeeded"),
+      Type.Literal("failed"),
+      Type.Literal("cancelled"),
+    ]),
+    evaluationRunIds: Type.Array(UuidSchema, { minItems: 1, maxItems: 100 }),
+  },
+  { additionalProperties: false },
+);
+
 export type Project = Static<typeof ProjectSchema>;
 export type CreateProject = Static<typeof CreateProjectSchema>;
 export type Prompt = Static<typeof PromptSchema>;
@@ -256,3 +289,5 @@ export type CreateFrameworkVersion = Static<typeof CreateFrameworkVersionSchema>
 export type ExperimentPromptVersion = Static<typeof ExperimentPromptVersionSchema>;
 export type CreateExperiment = Static<typeof CreateExperimentSchema>;
 export type Experiment = Static<typeof ExperimentSchema>;
+export type StartExperiment = Static<typeof StartExperimentSchema>;
+export type StartedExperiment = Static<typeof StartedExperimentSchema>;

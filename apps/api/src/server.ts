@@ -1,4 +1,8 @@
-import { createDatabaseClient, createEvaluationRepository } from "@ai-chat-eval/db";
+import {
+  createDatabaseClient,
+  createEvaluationDispatchRepository,
+  createEvaluationRepository,
+} from "@ai-chat-eval/db";
 import { createEvaluationQueue } from "@ai-chat-eval/queue";
 import { PythonProcessDiagnosisEngine } from "@prompt-regression/diagnosis-engine";
 
@@ -7,11 +11,23 @@ import { loadApiConfig } from "./config.js";
 import { createDatabaseCatalog } from "./database-catalog.js";
 import { createDatabaseDiagnosisStore } from "./database-diagnosis-store.js";
 import { createDatabaseEvaluationDispatcher } from "./evaluation-dispatcher.js";
+import {
+  createEvaluationOutboxProcessor,
+  type EvaluationOutboxProcessor,
+} from "./evaluation-outbox-processor.js";
 import { createDatabaseExperimentService } from "./database-experiment-service.js";
 
 const config = loadApiConfig();
 const database = createDatabaseClient();
 const evaluationQueue = createEvaluationQueue(config.REDIS_URL);
+const evaluationDispatcher = createDatabaseEvaluationDispatcher(
+  createEvaluationRepository(database.db),
+  evaluationQueue,
+);
+const evaluationOutboxProcessorRef: { current?: EvaluationOutboxProcessor } = {};
+const evaluationOutboxNotifier = {
+  notify: () => evaluationOutboxProcessorRef.current?.notify(),
+};
 const diagnosisEngine = new PythonProcessDiagnosisEngine({
   executable: config.DIAGNOSIS_PYTHON_EXECUTABLE,
   moduleArgs: ["-m", "prompt_regression_core"],
@@ -27,11 +43,8 @@ const app = await buildApp({
   catalog: createDatabaseCatalog(database.db),
   diagnosisEngine,
   diagnosisStore: createDatabaseDiagnosisStore(database.db),
-  evaluationDispatcher: createDatabaseEvaluationDispatcher(
-    createEvaluationRepository(database.db),
-    evaluationQueue,
-  ),
-  experimentService: createDatabaseExperimentService(database.db),
+  evaluationDispatcher,
+  experimentService: createDatabaseExperimentService(database.db, evaluationOutboxNotifier),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
   bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
   docsEnabled: config.API_DOCS_ENABLED,
@@ -63,6 +76,13 @@ const app = await buildApp({
     },
   },
 });
+const evaluationOutboxProcessor = createEvaluationOutboxProcessor(
+  createEvaluationDispatchRepository(database.db),
+  evaluationDispatcher,
+  { logger: app.log },
+);
+evaluationOutboxProcessorRef.current = evaluationOutboxProcessor;
+evaluationOutboxProcessor.start();
 
 let closing = false;
 async function shutdown(signal: string): Promise<void> {
@@ -71,6 +91,7 @@ async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, "shutting down API");
   try {
     await app.close();
+    await evaluationOutboxProcessor.stop();
     await evaluationQueue.close();
     await database.close();
   } catch (error) {
@@ -86,6 +107,8 @@ try {
   await app.listen({ host: config.API_HOST, port: config.API_PORT });
 } catch (error) {
   app.log.fatal({ err: error }, "API failed to start");
+  await evaluationOutboxProcessor.stop();
+  await evaluationQueue.close();
   await database.close();
   process.exitCode = 1;
 }

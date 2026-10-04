@@ -27,8 +27,19 @@ export function createRedisConnection(redisUrl: string): Redis {
   });
 }
 
+/** Producer commands must fail in bounded time so HTTP shutdown cannot hang on Redis. */
+export function createRedisProducerConnection(redisUrl: string): Redis {
+  return new Redis(redisUrl, {
+    enableReadyCheck: true,
+    lazyConnect: true,
+    maxRetriesPerRequest: 2,
+    connectTimeout: 5_000,
+    commandTimeout: 10_000,
+  });
+}
+
 export function createEvaluationQueue(redisUrl: string): Queue<EvaluationJob> {
-  const connection = createRedisConnection(redisUrl);
+  const connection = createRedisProducerConnection(redisUrl);
   return new Queue<EvaluationJob>(EVALUATION_QUEUE_NAME, {
     connection,
     defaultJobOptions: {

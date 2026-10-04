@@ -1,13 +1,14 @@
 import { and, count, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "../client.js";
-import { EntityNotFoundError, InvalidVersionStateError, RepositoryConflictError } from "../errors.js";
+import { EntityNotFoundError, RepositoryConflictError } from "../errors.js";
 import {
   datasets,
   datasetVersions,
   evaluationCases,
   evaluationFrameworks,
   evaluationFrameworkVersions,
+  evaluationRunDispatches,
   evaluationRuns,
   experimentPromptVersions,
   experiments,
@@ -179,7 +180,7 @@ export function createExperimentRepository(db: Database): ExperimentRepository {
           .where(eq(experimentPromptVersions.experimentId, experiment.id));
         assertRunBudget(selectedPrompts.length, experiment.repetitions);
 
-        if (experiment.status === "queued") {
+        if (experiment.status !== "draft") {
           const existing = await tx
             .select({
               evaluationRunId: evaluationRuns.id,
@@ -206,13 +207,13 @@ export function createExperimentRepository(db: Database): ExperimentRepository {
               "The experiment was already started with a different configuration.",
             );
           }
+          if (experiment.status === "queued" || experiment.status === "running") {
+            await tx
+              .insert(evaluationRunDispatches)
+              .values(existing.map((run) => ({ evaluationRunId: run.evaluationRunId })))
+              .onConflictDoNothing();
+          }
           return { experiment, evaluationRunIds: existing.map((run) => run.evaluationRunId) };
-        }
-        if (experiment.status !== "draft") {
-          throw new InvalidVersionStateError(
-            experiment.status,
-            `Cannot start an experiment in ${experiment.status} status`,
-          );
         }
         const [datasetSize] = await tx
           .select({ caseCount: count() })
@@ -254,6 +255,9 @@ export function createExperimentRepository(db: Database): ExperimentRepository {
             evaluationRunIds.push(evaluationRun.id);
           }
         }
+        await tx
+          .insert(evaluationRunDispatches)
+          .values(evaluationRunIds.map((evaluationRunId) => ({ evaluationRunId })));
         const [queued] = await tx
           .update(experiments)
           .set({ status: "queued", startedAt: new Date(), updatedAt: new Date() })
