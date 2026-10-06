@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "../client.js";
 import { EntityNotFoundError, RepositoryConflictError } from "../errors.js";
@@ -16,6 +16,7 @@ import {
   projects,
   prompts,
   promptVersions,
+  type EvaluationRun,
   type JsonValue,
 } from "../schema.js";
 import { hashVersionContent, stableStringify } from "../versioning.js";
@@ -42,7 +43,35 @@ export interface CreateExperimentInput {
 
 export interface ExperimentRepository {
   create(input: CreateExperimentInput): Promise<typeof experiments.$inferSelect>;
+  listByProject(projectId: string): Promise<Array<typeof experiments.$inferSelect>>;
+  getDetail(projectId: string, experimentId: string): Promise<ExperimentDetailRecord | null>;
   start(input: StartExperimentInput): Promise<StartedExperiment>;
+}
+
+export interface ExperimentDetailRecord {
+  readonly experiment: typeof experiments.$inferSelect;
+  readonly datasetCaseCount: number;
+  readonly promptVersions: ReadonlyArray<{
+    readonly promptVersionId: string;
+    readonly label: string;
+    readonly isBaseline: boolean;
+  }>;
+  readonly runs: ReadonlyArray<{
+    readonly evaluationRunId: string;
+    readonly generationRunId: string;
+    readonly promptVersionId: string;
+    readonly label: string;
+    readonly isBaseline: boolean;
+    readonly repetition: number;
+    readonly status: EvaluationRun["status"];
+    readonly requestedCount: number;
+    readonly succeededCount: number;
+    readonly failedCount: number;
+    readonly failureCode: string | null;
+    readonly failureMessage: string | null;
+    readonly startedAt: Date | null;
+    readonly completedAt: Date | null;
+  }>;
 }
 
 export interface StartExperimentInput {
@@ -161,6 +190,82 @@ export function createExperimentRepository(db: Database): ExperimentRepository {
         );
         return created;
       });
+    },
+
+    async listByProject(projectId) {
+      return db
+        .select()
+        .from(experiments)
+        .where(eq(experiments.projectId, projectId))
+        .orderBy(desc(experiments.createdAt), desc(experiments.id));
+    },
+
+    async getDetail(projectId, experimentId) {
+      const [experiment] = await db
+        .select()
+        .from(experiments)
+        .where(and(eq(experiments.id, experimentId), eq(experiments.projectId, projectId)))
+        .limit(1);
+      if (!experiment) return null;
+
+      const [datasetVersion] = await db
+        .select({ caseCount: datasetVersions.caseCount })
+        .from(datasetVersions)
+        .where(eq(datasetVersions.id, experiment.datasetVersionId))
+        .limit(1);
+      if (!datasetVersion) {
+        throw new EntityNotFoundError("DatasetVersion", experiment.datasetVersionId);
+      }
+
+      const selectedPromptVersions = await db
+        .select({
+          promptVersionId: experimentPromptVersions.promptVersionId,
+          label: experimentPromptVersions.label,
+          isBaseline: experimentPromptVersions.isBaseline,
+        })
+        .from(experimentPromptVersions)
+        .where(eq(experimentPromptVersions.experimentId, experiment.id))
+        .orderBy(desc(experimentPromptVersions.isBaseline), asc(experimentPromptVersions.label));
+
+      const runs = await db
+        .select({
+          evaluationRunId: evaluationRuns.id,
+          generationRunId: generationRuns.id,
+          promptVersionId: generationRuns.promptVersionId,
+          label: experimentPromptVersions.label,
+          isBaseline: experimentPromptVersions.isBaseline,
+          repetition: generationRuns.repetition,
+          status: evaluationRuns.status,
+          requestedCount: evaluationRuns.requestedCount,
+          succeededCount: evaluationRuns.succeededCount,
+          failedCount: evaluationRuns.failedCount,
+          failureCode: evaluationRuns.failureCode,
+          failureMessage: evaluationRuns.failureMessage,
+          startedAt: evaluationRuns.startedAt,
+          completedAt: evaluationRuns.completedAt,
+        })
+        .from(evaluationRuns)
+        .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
+        .innerJoin(
+          experimentPromptVersions,
+          and(
+            eq(experimentPromptVersions.experimentId, experiment.id),
+            eq(experimentPromptVersions.promptVersionId, generationRuns.promptVersionId),
+          ),
+        )
+        .where(eq(evaluationRuns.experimentId, experiment.id))
+        .orderBy(
+          desc(experimentPromptVersions.isBaseline),
+          asc(experimentPromptVersions.label),
+          asc(generationRuns.repetition),
+        );
+
+      return {
+        experiment,
+        datasetCaseCount: datasetVersion.caseCount,
+        promptVersions: selectedPromptVersions,
+        runs,
+      };
     },
 
     async start(input) {

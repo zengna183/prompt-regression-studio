@@ -304,7 +304,58 @@ describe("API", () => {
     const start = vi.fn(() =>
       Promise.resolve({ experimentId, status: "queued" as const, evaluationRunIds: [evaluationRunId] }),
     );
-    const service: ExperimentService = { create, start };
+    const experiment = await create();
+    create.mockClear();
+    const detail = {
+      experiment,
+      promptVersions: [
+        {
+          promptVersionId: experimentRequest.promptVersions[0].promptVersionId,
+          label: "baseline",
+          isBaseline: true,
+        },
+      ],
+      progress: {
+        plannedRuns: 1,
+        createdRuns: 1,
+        queuedRuns: 1,
+        runningRuns: 0,
+        succeededRuns: 0,
+        partiallySucceededRuns: 0,
+        failedRuns: 0,
+        cancelledRuns: 0,
+        completedRuns: 0,
+        completionRate: 0,
+        casesPerRun: 1,
+        plannedCaseExecutions: 1,
+        completedCaseExecutions: 0,
+      },
+      runs: [
+        {
+          evaluationRunId,
+          generationRunId: randomUUID(),
+          promptVersionId: experimentRequest.promptVersions[0].promptVersionId,
+          label: "baseline",
+          isBaseline: true,
+          repetition: 1,
+          status: "queued" as const,
+          requestedCount: 0,
+          succeededCount: 0,
+          failedCount: 0,
+          failureCode: null,
+          failureMessage: null,
+          startedAt: null,
+          completedAt: null,
+        },
+      ],
+      failureCode: null,
+      failureMessage: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    const list = vi.fn(() => Promise.resolve([experiment]));
+    const get = vi.fn(() => Promise.resolve(detail));
+    const service: ExperimentService = { list, get, create, start };
     const app = await buildTestApp(
       new TestCatalog(),
       new RecordingDiagnosisEngine(),
@@ -332,6 +383,21 @@ describe("API", () => {
     expect(started.statusCode).toBe(202);
     expect(started.json()).toEqual({ experimentId, status: "queued", evaluationRunIds: [evaluationRunId] });
     expect(start).toHaveBeenCalledWith(projectId, experimentId, startRequest);
+
+    const listed = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}/experiments`,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual([experiment]);
+
+    const fetched = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}/experiments/${experimentId}`,
+    });
+    expect(fetched.statusCode).toBe(200);
+    expect(fetched.json()).toEqual(detail);
+    expect(get).toHaveBeenCalledWith(projectId, experimentId);
     await app.close();
   });
 

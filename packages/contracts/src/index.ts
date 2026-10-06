@@ -365,6 +365,68 @@ export const StartedExperimentSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const EvaluationRunStatusSchema = Type.Union([
+  Type.Literal("queued"),
+  Type.Literal("running"),
+  Type.Literal("succeeded"),
+  Type.Literal("partially_succeeded"),
+  Type.Literal("failed"),
+  Type.Literal("cancelled"),
+]);
+
+export const ExperimentProgressSchema = Type.Object(
+  {
+    plannedRuns: Type.Integer({ minimum: 1 }),
+    createdRuns: Type.Integer({ minimum: 0 }),
+    queuedRuns: Type.Integer({ minimum: 0 }),
+    runningRuns: Type.Integer({ minimum: 0 }),
+    succeededRuns: Type.Integer({ minimum: 0 }),
+    partiallySucceededRuns: Type.Integer({ minimum: 0 }),
+    failedRuns: Type.Integer({ minimum: 0 }),
+    cancelledRuns: Type.Integer({ minimum: 0 }),
+    completedRuns: Type.Integer({ minimum: 0 }),
+    completionRate: Type.Number({ minimum: 0, maximum: 1 }),
+    casesPerRun: Type.Integer({ minimum: 0 }),
+    plannedCaseExecutions: Type.Integer({ minimum: 0 }),
+    completedCaseExecutions: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+
+export const ExperimentRunSummarySchema = Type.Object(
+  {
+    evaluationRunId: UuidSchema,
+    generationRunId: UuidSchema,
+    promptVersionId: UuidSchema,
+    label: Type.String(),
+    isBaseline: Type.Boolean(),
+    repetition: Type.Integer({ minimum: 1 }),
+    status: EvaluationRunStatusSchema,
+    requestedCount: Type.Integer({ minimum: 0 }),
+    succeededCount: Type.Integer({ minimum: 0 }),
+    failedCount: Type.Integer({ minimum: 0 }),
+    failureCode: Type.Union([Type.String(), Type.Null()]),
+    failureMessage: Type.Union([Type.String(), Type.Null()]),
+    startedAt: Type.Union([IsoDateSchema, Type.Null()]),
+    completedAt: Type.Union([IsoDateSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export const ExperimentDetailSchema = Type.Object(
+  {
+    experiment: ExperimentSchema,
+    promptVersions: Type.Array(ExperimentPromptVersionSchema, { minItems: 1, maxItems: 20 }),
+    progress: ExperimentProgressSchema,
+    runs: Type.Array(ExperimentRunSummarySchema, { maxItems: 100 }),
+    failureCode: Type.Union([Type.String(), Type.Null()]),
+    failureMessage: Type.Union([Type.String(), Type.Null()]),
+    startedAt: Type.Union([IsoDateSchema, Type.Null()]),
+    completedAt: Type.Union([IsoDateSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
 export type Project = Static<typeof ProjectSchema>;
 export type CreateProject = Static<typeof CreateProjectSchema>;
 export type Prompt = Static<typeof PromptSchema>;
@@ -389,3 +451,7 @@ export type CreateExperiment = Static<typeof CreateExperimentSchema>;
 export type Experiment = Static<typeof ExperimentSchema>;
 export type StartExperiment = Static<typeof StartExperimentSchema>;
 export type StartedExperiment = Static<typeof StartedExperimentSchema>;
+export type EvaluationRunStatus = Static<typeof EvaluationRunStatusSchema>;
+export type ExperimentProgress = Static<typeof ExperimentProgressSchema>;
+export type ExperimentRunSummary = Static<typeof ExperimentRunSummarySchema>;
+export type ExperimentDetail = Static<typeof ExperimentDetailSchema>;

@@ -1,9 +1,10 @@
-import type { Experiment } from "@ai-chat-eval/contracts";
+import type { Experiment, ExperimentDetail, ExperimentProgress } from "@ai-chat-eval/contracts";
 import {
   EntityNotFoundError,
   RepositoryConflictError,
   createExperimentRepository,
   type Database,
+  type ExperimentDetailRecord,
   type JsonValue,
 } from "@ai-chat-eval/db";
 
@@ -40,6 +41,14 @@ export function createDatabaseExperimentService(
 ): ExperimentService {
   const experiments = createExperimentRepository(db);
   return {
+    async list(projectId) {
+      return (await experiments.listByProject(projectId)).map(dto);
+    },
+    async get(projectId, experimentId) {
+      const detail = await experiments.getDetail(projectId, experimentId);
+      if (!detail) throw new ApiError(404, "NOT_FOUND", `Experiment not found: ${experimentId}`);
+      return detailDto(detail);
+    },
     async create(projectId, input) {
       try {
         return dto(
@@ -103,5 +112,54 @@ export function createDatabaseExperimentService(
         evaluationRunIds: [...started.evaluationRunIds],
       };
     },
+  };
+}
+
+function detailDto(detail: ExperimentDetailRecord): ExperimentDetail {
+  return {
+    experiment: dto(detail.experiment),
+    promptVersions: detail.promptVersions.map((promptVersion) => ({ ...promptVersion })),
+    progress: deriveExperimentProgress(detail),
+    runs: detail.runs.map((run) => ({
+      ...run,
+      startedAt: run.startedAt?.toISOString() ?? null,
+      completedAt: run.completedAt?.toISOString() ?? null,
+    })),
+    failureCode: detail.experiment.failureCode,
+    failureMessage: detail.experiment.failureMessage,
+    startedAt: detail.experiment.startedAt?.toISOString() ?? null,
+    completedAt: detail.experiment.completedAt?.toISOString() ?? null,
+  };
+}
+
+export function deriveExperimentProgress(detail: ExperimentDetailRecord): ExperimentProgress {
+  const plannedRuns = detail.promptVersions.length * detail.experiment.repetitions;
+  if (!Number.isSafeInteger(plannedRuns) || plannedRuns < 1) {
+    throw new Error("Experiment has an invalid planned run count");
+  }
+  const count = (status: ExperimentDetailRecord["runs"][number]["status"]) =>
+    detail.runs.filter((run) => run.status === status).length;
+  const succeededRuns = count("succeeded");
+  const partiallySucceededRuns = count("partially_succeeded");
+  const failedRuns = count("failed");
+  const cancelledRuns = count("cancelled");
+  const completedRuns = succeededRuns + partiallySucceededRuns + failedRuns + cancelledRuns;
+  return {
+    plannedRuns,
+    createdRuns: detail.runs.length,
+    queuedRuns: count("queued"),
+    runningRuns: count("running"),
+    succeededRuns,
+    partiallySucceededRuns,
+    failedRuns,
+    cancelledRuns,
+    completedRuns,
+    completionRate: Math.min(1, completedRuns / plannedRuns),
+    casesPerRun: detail.datasetCaseCount,
+    plannedCaseExecutions: plannedRuns * detail.datasetCaseCount,
+    completedCaseExecutions: detail.runs.reduce(
+      (sum, run) => sum + run.succeededCount + run.failedCount,
+      0,
+    ),
   };
 }

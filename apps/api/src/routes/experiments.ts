@@ -1,6 +1,7 @@
 import {
-  CreateExperimentSchema,
-  ExperimentSchema,
+    CreateExperimentSchema,
+    ExperimentDetailSchema,
+    ExperimentSchema,
   StartExperimentSchema,
   StartedExperimentSchema,
   UuidSchema,
@@ -19,6 +20,38 @@ const ExperimentParams = Type.Object(
 
 export function experimentRoutes(service: ExperimentService | undefined): FastifyPluginAsyncTypebox {
   return (app) => {
+    app.get(
+      "/v1/projects/:projectId/experiments",
+      {
+        schema: {
+          tags: ["experiments"],
+          params: ProjectParams,
+          response: { 200: Type.Array(ExperimentSchema) },
+        },
+      },
+      async (request) => {
+        if (!service) {
+          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
+        }
+        return service.list(request.params.projectId);
+      },
+    );
+    app.get(
+      "/v1/projects/:projectId/experiments/:experimentId",
+      {
+        schema: {
+          tags: ["experiments"],
+          params: ExperimentParams,
+          response: { 200: ExperimentDetailSchema },
+        },
+      },
+      async (request) => {
+        if (!service) {
+          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
+        }
+        return service.get(request.params.projectId, request.params.experimentId);
+      },
+    );
     app.post(
       "/v1/projects/:projectId/experiments",
       {
