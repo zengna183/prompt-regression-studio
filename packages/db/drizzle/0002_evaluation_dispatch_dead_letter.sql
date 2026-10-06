@@ -1,0 +1,3 @@
+ALTER TABLE "evaluation_run_dispatches" DROP CONSTRAINT "evaluation_dispatches_status_valid";--> statement-breakpoint
+ALTER TABLE "evaluation_run_dispatches" ADD COLUMN "failed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "evaluation_run_dispatches" ADD CONSTRAINT "evaluation_dispatches_status_valid" CHECK ("evaluation_run_dispatches"."status" in ('pending', 'dispatching', 'dispatched', 'failed'));

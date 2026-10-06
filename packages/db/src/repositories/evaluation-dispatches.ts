@@ -1,7 +1,8 @@
 import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import type { Database } from "../client.js";
-import { evaluationRunDispatches } from "../schema.js";
+import { evaluationRunDispatches, evaluationRuns, generationRuns } from "../schema.js";
+import { synchronizeExperimentStatus } from "./evaluations.js";
 
 export interface ClaimedEvaluationDispatch {
   readonly evaluationRunId: string;
@@ -14,7 +15,11 @@ export interface EvaluationDispatchRepository {
     readonly staleAfterMs?: number;
   }): Promise<readonly ClaimedEvaluationDispatch[]>;
   markDispatched(claim: ClaimedEvaluationDispatch): Promise<boolean>;
-  reschedule(claim: ClaimedEvaluationDispatch, errorCode: string): Promise<boolean>;
+  recordFailure(
+    claim: ClaimedEvaluationDispatch,
+    errorCode: string,
+    maxAttempts: number,
+  ): Promise<"rescheduled" | "failed" | "settled" | "lease_lost">;
 }
 
 const DEFAULT_BATCH_SIZE = 20;
@@ -81,6 +86,7 @@ export function createEvaluationDispatchRepository(db: Database): EvaluationDisp
         .set({
           status: "dispatched",
           dispatchedAt: now,
+          failedAt: null,
           lockedAt: null,
           lastErrorCode: null,
           updatedAt: now,
@@ -96,27 +102,93 @@ export function createEvaluationDispatchRepository(db: Database): EvaluationDisp
       return updated !== undefined;
     },
 
-    async reschedule(claim, errorCode) {
+    async recordFailure(claim, errorCode, maxAttempts) {
+      const boundedMaxAttempts = boundedInteger(maxAttempts, 10, 1, 100, "maxAttempts");
+      const exhausted = claim.attempt >= boundedMaxAttempts;
       const delayMs = Math.min(60_000, 1_000 * 2 ** Math.max(0, claim.attempt - 1));
       const now = new Date();
-      const [updated] = await db
-        .update(evaluationRunDispatches)
-        .set({
-          status: "pending",
-          lockedAt: null,
-          nextAttemptAt: new Date(now.getTime() + delayMs),
-          lastErrorCode: normalizeErrorCode(errorCode),
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(evaluationRunDispatches.evaluationRunId, claim.evaluationRunId),
-            eq(evaluationRunDispatches.status, "dispatching"),
-            eq(evaluationRunDispatches.attemptCount, claim.attempt),
-          ),
-        )
-        .returning({ evaluationRunId: evaluationRunDispatches.evaluationRunId });
-      return updated !== undefined;
+      return db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(evaluationRunDispatches)
+          .set({
+            status: exhausted ? "failed" : "pending",
+            lockedAt: null,
+            nextAttemptAt: exhausted ? now : new Date(now.getTime() + delayMs),
+            failedAt: exhausted ? now : null,
+            lastErrorCode: normalizeErrorCode(errorCode),
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(evaluationRunDispatches.evaluationRunId, claim.evaluationRunId),
+              eq(evaluationRunDispatches.status, "dispatching"),
+              eq(evaluationRunDispatches.attemptCount, claim.attempt),
+            ),
+          )
+          .returning({ evaluationRunId: evaluationRunDispatches.evaluationRunId });
+        if (!updated) return "lease_lost";
+
+        if (exhausted) {
+          const failureCode = normalizeErrorCode(errorCode);
+          const [run] = await tx
+            .select({
+              status: evaluationRuns.status,
+              experimentId: evaluationRuns.experimentId,
+              generationRunId: evaluationRuns.generationRunId,
+            })
+            .from(evaluationRuns)
+            .where(eq(evaluationRuns.id, claim.evaluationRunId))
+            .for("update")
+            .limit(1);
+          if (!run || run.status !== "queued") {
+            await tx
+              .update(evaluationRunDispatches)
+              .set({
+                status: "dispatched",
+                dispatchedAt: now,
+                failedAt: null,
+                lastErrorCode: null,
+                updatedAt: now,
+              })
+              .where(eq(evaluationRunDispatches.evaluationRunId, claim.evaluationRunId));
+            return "settled";
+          }
+
+          const [failedRun] = await tx
+            .update(evaluationRuns)
+            .set({
+              status: "failed",
+              failureCode,
+              failureMessage: "The evaluation run could not be submitted to the work queue.",
+              completedAt: now,
+            })
+            .where(
+              and(
+                eq(evaluationRuns.id, claim.evaluationRunId),
+                eq(evaluationRuns.status, "queued"),
+              ),
+            )
+            .returning({ experimentId: evaluationRuns.experimentId });
+          if (failedRun) {
+            await tx
+              .update(generationRuns)
+              .set({
+                status: "failed",
+                failureCode,
+                failureMessage: "The generation run could not be submitted to the work queue.",
+                completedAt: now,
+              })
+              .where(
+                and(
+                  eq(generationRuns.id, run.generationRunId),
+                  eq(generationRuns.status, "queued"),
+                ),
+              );
+            await synchronizeExperimentStatus(tx, failedRun.experimentId, now);
+          }
+        }
+        return exhausted ? "failed" : "rescheduled";
+      });
     },
   };
 }

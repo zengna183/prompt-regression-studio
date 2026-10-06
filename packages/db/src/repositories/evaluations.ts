@@ -20,7 +20,7 @@ import {
   type Score,
 } from "../schema.js";
 
-type DatabaseTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export type DatabaseTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export interface EvaluationExecutionSnapshot {
   readonly evaluationRun: EvaluationRun;
@@ -369,7 +369,7 @@ export function deriveExperimentStatus(
   return "succeeded";
 }
 
-async function synchronizeExperimentStatus(
+export async function synchronizeExperimentStatus(
   tx: DatabaseTransaction,
   experimentId: string,
   now: Date,

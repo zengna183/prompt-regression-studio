@@ -5,12 +5,17 @@ import type { EvaluationDispatcher } from "./evaluation-dispatcher.js";
 export interface EvaluationOutboxProcessor {
   start(): void;
   notify(): void;
-  drainOnce(): Promise<{ readonly dispatched: number; readonly rescheduled: number }>;
+  drainOnce(): Promise<{
+    readonly dispatched: number;
+    readonly rescheduled: number;
+    readonly failed: number;
+  }>;
   stop(): Promise<void>;
 }
 
 export interface EvaluationOutboxLogger {
   warn(fields: Record<string, unknown>, message: string): void;
+  error(fields: Record<string, unknown>, message: string): void;
 }
 
 export interface EvaluationOutboxProcessorOptions {
@@ -18,6 +23,7 @@ export interface EvaluationOutboxProcessorOptions {
   readonly batchSize?: number;
   readonly concurrency?: number;
   readonly staleAfterMs?: number;
+  readonly maxAttempts?: number;
   readonly logger?: EvaluationOutboxLogger;
 }
 
@@ -37,15 +43,23 @@ export function createEvaluationOutboxProcessor(
     60 * 60_000,
     "staleAfterMs",
   );
+  const maxAttempts = boundedInteger(options.maxAttempts, 10, 1, 100, "maxAttempts");
   let timer: ReturnType<typeof setInterval> | undefined;
-  let active: Promise<{ readonly dispatched: number; readonly rescheduled: number }> | undefined;
+  let active:
+    | Promise<{ readonly dispatched: number; readonly rescheduled: number; readonly failed: number }>
+    | undefined;
   let scheduled: Promise<void> | undefined;
   let stopping = false;
 
-  async function drain(): Promise<{ readonly dispatched: number; readonly rescheduled: number }> {
+  async function drain(): Promise<{
+    readonly dispatched: number;
+    readonly rescheduled: number;
+    readonly failed: number;
+  }> {
     const claims = await repository.claimBatch({ limit: batchSize, staleAfterMs });
     let dispatched = 0;
     let rescheduled = 0;
+    let failed = 0;
     for (let offset = 0; offset < claims.length; offset += concurrency) {
       const group = claims.slice(offset, offset + concurrency);
       await Promise.all(
@@ -55,24 +69,58 @@ export function createEvaluationOutboxProcessor(
             await repository.markDispatched(claim);
             dispatched += 1;
           } catch (error) {
-            rescheduled += 1;
             try {
-              await repository.reschedule(claim, "QUEUE_DISPATCH_FAILED");
+              const disposition = await repository.recordFailure(
+                claim,
+                "QUEUE_DISPATCH_FAILED",
+                maxAttempts,
+              );
+              if (disposition === "rescheduled") {
+                rescheduled += 1;
+                options.logger?.warn(
+                  {
+                    ...safeErrorFields(error),
+                    evaluationRunId: claim.evaluationRunId,
+                    attempt: claim.attempt,
+                  },
+                  "evaluation dispatch failed and will be retried",
+                );
+              } else if (disposition === "failed") {
+                failed += 1;
+                options.logger?.error(
+                  {
+                    ...safeErrorFields(error),
+                    evaluationRunId: claim.evaluationRunId,
+                    attempt: claim.attempt,
+                  },
+                  "evaluation dispatch exhausted its retry limit",
+                );
+              } else if (disposition === "settled") {
+                dispatched += 1;
+                options.logger?.warn(
+                  { evaluationRunId: claim.evaluationRunId, attempt: claim.attempt },
+                  "evaluation dispatch response was ambiguous but the run already advanced",
+                );
+              } else {
+                options.logger?.warn(
+                  { evaluationRunId: claim.evaluationRunId, attempt: claim.attempt },
+                  "evaluation dispatch lease was superseded",
+                );
+              }
             } catch (rescheduleError) {
               options.logger?.warn(
-                { err: rescheduleError, evaluationRunId: claim.evaluationRunId },
+                {
+                  ...safeErrorFields(rescheduleError),
+                  evaluationRunId: claim.evaluationRunId,
+                },
                 "could not reschedule evaluation dispatch",
               );
             }
-            options.logger?.warn(
-              { err: error, evaluationRunId: claim.evaluationRunId },
-              "evaluation dispatch failed and will be retried",
-            );
           }
         }),
       );
     }
-    return { dispatched, rescheduled };
+    return { dispatched, rescheduled, failed };
   }
 
   function drainOnce() {
@@ -90,7 +138,7 @@ export function createEvaluationOutboxProcessor(
         if (!stopping) await drainOnce();
       })
       .catch((error: unknown) => {
-        options.logger?.warn({ err: error }, "evaluation outbox poll failed");
+        options.logger?.warn(safeErrorFields(error), "evaluation outbox poll failed");
       })
       .finally(() => {
         scheduled = undefined;
@@ -113,6 +161,15 @@ export function createEvaluationOutboxProcessor(
       await scheduled;
       await active;
     },
+  };
+}
+
+function safeErrorFields(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { errorName: "UnknownError" };
+  const code = "code" in error && typeof error.code === "string" ? error.code : undefined;
+  return {
+    errorName: error.name || "Error",
+    ...(code === undefined ? {} : { errorCode: code.slice(0, 120) }),
   };
 }
 

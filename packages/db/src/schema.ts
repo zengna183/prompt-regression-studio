@@ -549,6 +549,7 @@ export const evaluationRunDispatches = pgTable(
       .defaultNow(),
     lockedAt: timestamp("locked_at", { withTimezone: true, mode: "date" }),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true, mode: "date" }),
+    failedAt: timestamp("failed_at", { withTimezone: true, mode: "date" }),
     lastErrorCode: varchar("last_error_code", { length: 120 }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -561,7 +562,7 @@ export const evaluationRunDispatches = pgTable(
     ),
     check(
       "evaluation_dispatches_status_valid",
-      sql`${table.status} in ('pending', 'dispatching', 'dispatched')`,
+      sql`${table.status} in ('pending', 'dispatching', 'dispatched', 'failed')`,
     ),
     check("evaluation_dispatches_attempts_nonnegative", sql`${table.attemptCount} >= 0`),
   ],
