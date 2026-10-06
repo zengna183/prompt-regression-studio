@@ -427,6 +427,61 @@ export const ExperimentDetailSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const MetricSummarySchema = Type.Object(
+  {
+    metricKey: Type.String(),
+    observationCount: Type.Integer({ minimum: 0 }),
+    coverageRate: Type.Number({ minimum: 0, maximum: 1 }),
+    averageScore: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    passRate: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    averageConfidence: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export const PairedPromptComparisonSchema = Type.Object(
+  {
+    pairedCount: Type.Integer({ minimum: 0 }),
+    coverageRate: Type.Number({ minimum: 0, maximum: 1 }),
+    wins: Type.Integer({ minimum: 0 }),
+    ties: Type.Integer({ minimum: 0 }),
+    losses: Type.Integer({ minimum: 0 }),
+    winRate: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    meanDelta: Type.Union([Type.Number({ minimum: -1, maximum: 1 }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export const PromptVersionComparisonSchema = Type.Object(
+  {
+    promptVersionId: UuidSchema,
+    label: Type.String(),
+    isBaseline: Type.Boolean(),
+    rank: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    observationCount: Type.Integer({ minimum: 0 }),
+    coverageRate: Type.Number({ minimum: 0, maximum: 1 }),
+    averageScore: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    passRate: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    averageConfidence: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    deltaFromBaseline: Type.Union([Type.Number({ minimum: -1, maximum: 1 }), Type.Null()]),
+    pairedComparison: Type.Union([PairedPromptComparisonSchema, Type.Null()]),
+    dimensions: Type.Array(MetricSummarySchema),
+  },
+  { additionalProperties: false },
+);
+
+export const ExperimentComparisonSchema = Type.Object(
+  {
+    experimentId: UuidSchema,
+    status: ExperimentStatusSchema,
+    baselinePromptVersionId: UuidSchema,
+    expectedObservationsPerVersion: Type.Integer({ minimum: 1 }),
+    isComplete: Type.Boolean(),
+    versions: Type.Array(PromptVersionComparisonSchema, { minItems: 1, maxItems: 20 }),
+  },
+  { additionalProperties: false },
+);
+
 export type Project = Static<typeof ProjectSchema>;
 export type CreateProject = Static<typeof CreateProjectSchema>;
 export type Prompt = Static<typeof PromptSchema>;
@@ -455,3 +510,7 @@ export type EvaluationRunStatus = Static<typeof EvaluationRunStatusSchema>;
 export type ExperimentProgress = Static<typeof ExperimentProgressSchema>;
 export type ExperimentRunSummary = Static<typeof ExperimentRunSummarySchema>;
 export type ExperimentDetail = Static<typeof ExperimentDetailSchema>;
+export type MetricSummary = Static<typeof MetricSummarySchema>;
+export type PairedPromptComparison = Static<typeof PairedPromptComparisonSchema>;
+export type PromptVersionComparison = Static<typeof PromptVersionComparisonSchema>;
+export type ExperimentComparison = Static<typeof ExperimentComparisonSchema>;

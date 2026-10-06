@@ -355,7 +355,31 @@ describe("API", () => {
     };
     const list = vi.fn(() => Promise.resolve([experiment]));
     const get = vi.fn(() => Promise.resolve(detail));
-    const service: ExperimentService = { list, get, create, start };
+    const comparison = {
+      experimentId,
+      status: "draft" as const,
+      baselinePromptVersionId: experimentRequest.promptVersions[0].promptVersionId,
+      expectedObservationsPerVersion: 1,
+      isComplete: false,
+      versions: [
+        {
+          promptVersionId: experimentRequest.promptVersions[0].promptVersionId,
+          label: "baseline",
+          isBaseline: true,
+          rank: null,
+          observationCount: 0,
+          coverageRate: 0,
+          averageScore: null,
+          passRate: null,
+          averageConfidence: null,
+          deltaFromBaseline: null,
+          pairedComparison: null,
+          dimensions: [],
+        },
+      ],
+    };
+    const compare = vi.fn(() => Promise.resolve(comparison));
+    const service: ExperimentService = { list, get, compare, create, start };
     const app = await buildTestApp(
       new TestCatalog(),
       new RecordingDiagnosisEngine(),
@@ -398,6 +422,14 @@ describe("API", () => {
     expect(fetched.statusCode).toBe(200);
     expect(fetched.json()).toEqual(detail);
     expect(get).toHaveBeenCalledWith(projectId, experimentId);
+
+    const compared = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}/experiments/${experimentId}/comparison`,
+    });
+    expect(compared.statusCode).toBe(200);
+    expect(compared.json()).toEqual(comparison);
+    expect(compare).toHaveBeenCalledWith(projectId, experimentId);
     await app.close();
   });
 

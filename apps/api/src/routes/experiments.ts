@@ -1,6 +1,7 @@
 import {
     CreateExperimentSchema,
     ExperimentDetailSchema,
+    ExperimentComparisonSchema,
     ExperimentSchema,
   StartExperimentSchema,
   StartedExperimentSchema,
@@ -50,6 +51,22 @@ export function experimentRoutes(service: ExperimentService | undefined): Fastif
           throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
         }
         return service.get(request.params.projectId, request.params.experimentId);
+      },
+    );
+    app.get(
+      "/v1/projects/:projectId/experiments/:experimentId/comparison",
+      {
+        schema: {
+          tags: ["experiments"],
+          params: ExperimentParams,
+          response: { 200: ExperimentComparisonSchema },
+        },
+      },
+      async (request) => {
+        if (!service) {
+          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
+        }
+        return service.compare(request.params.projectId, request.params.experimentId);
       },
     );
     app.post(

@@ -10,6 +10,7 @@ import {
 
 import { ApiError } from "./errors.js";
 import type { ExperimentService } from "./experiment-service.js";
+import { buildExperimentComparison } from "./experiment-comparison.js";
 
 export interface ExperimentStartNotifier {
   notify(): void;
@@ -48,6 +49,13 @@ export function createDatabaseExperimentService(
       const detail = await experiments.getDetail(projectId, experimentId);
       if (!detail) throw new ApiError(404, "NOT_FOUND", `Experiment not found: ${experimentId}`);
       return detailDto(detail);
+    },
+    async compare(projectId, experimentId) {
+      const comparison = await experiments.getComparisonData(projectId, experimentId);
+      if (!comparison) {
+        throw new ApiError(404, "NOT_FOUND", `Experiment not found: ${experimentId}`);
+      }
+      return buildExperimentComparison(comparison);
     },
     async create(projectId, input) {
       try {

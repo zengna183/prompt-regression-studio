@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Database } from "../client.js";
 import { EntityNotFoundError, RepositoryConflictError } from "../errors.js";
@@ -8,6 +8,7 @@ import {
   evaluationCases,
   evaluationFrameworks,
   evaluationFrameworkVersions,
+  generationOutputs,
   evaluationRunDispatches,
   evaluationRuns,
   experimentPromptVersions,
@@ -16,6 +17,7 @@ import {
   projects,
   prompts,
   promptVersions,
+  scores,
   type EvaluationRun,
   type JsonValue,
 } from "../schema.js";
@@ -45,6 +47,10 @@ export interface ExperimentRepository {
   create(input: CreateExperimentInput): Promise<typeof experiments.$inferSelect>;
   listByProject(projectId: string): Promise<Array<typeof experiments.$inferSelect>>;
   getDetail(projectId: string, experimentId: string): Promise<ExperimentDetailRecord | null>;
+  getComparisonData(
+    projectId: string,
+    experimentId: string,
+  ): Promise<ExperimentComparisonRecord | null>;
   start(input: StartExperimentInput): Promise<StartedExperiment>;
 }
 
@@ -71,6 +77,33 @@ export interface ExperimentDetailRecord {
     readonly failureMessage: string | null;
     readonly startedAt: Date | null;
     readonly completedAt: Date | null;
+  }>;
+}
+
+export interface ExperimentComparisonRecord {
+  readonly experiment: typeof experiments.$inferSelect;
+  readonly datasetCaseCount: number;
+  readonly promptVersions: ExperimentDetailRecord["promptVersions"];
+  readonly overall: ReadonlyArray<{
+    readonly promptVersionId: string;
+    readonly observationCount: number;
+    readonly averageScore: number;
+    readonly passedCount: number;
+    readonly averageConfidence: number;
+  }>;
+  readonly dimensions: ReadonlyArray<{
+    readonly promptVersionId: string;
+    readonly metricKey: string;
+    readonly observationCount: number;
+    readonly averageScore: number;
+    readonly passedCount: number;
+    readonly averageConfidence: number;
+  }>;
+  readonly pairedObservations: ReadonlyArray<{
+    readonly promptVersionId: string;
+    readonly repetition: number;
+    readonly caseId: string;
+    readonly normalizedScore: number;
   }>;
 }
 
@@ -265,6 +298,115 @@ export function createExperimentRepository(db: Database): ExperimentRepository {
         datasetCaseCount: datasetVersion.caseCount,
         promptVersions: selectedPromptVersions,
         runs,
+      };
+    },
+
+    async getComparisonData(projectId, experimentId) {
+      const [experiment] = await db
+        .select()
+        .from(experiments)
+        .where(and(eq(experiments.id, experimentId), eq(experiments.projectId, projectId)))
+        .limit(1);
+      if (!experiment) return null;
+
+      const [datasetVersion] = await db
+        .select({ caseCount: datasetVersions.caseCount })
+        .from(datasetVersions)
+        .where(eq(datasetVersions.id, experiment.datasetVersionId))
+        .limit(1);
+      if (!datasetVersion) {
+        throw new EntityNotFoundError("DatasetVersion", experiment.datasetVersionId);
+      }
+
+      const selectedPromptVersions = await db
+        .select({
+          promptVersionId: experimentPromptVersions.promptVersionId,
+          label: experimentPromptVersions.label,
+          isBaseline: experimentPromptVersions.isBaseline,
+        })
+        .from(experimentPromptVersions)
+        .where(eq(experimentPromptVersions.experimentId, experiment.id))
+        .orderBy(desc(experimentPromptVersions.isBaseline), asc(experimentPromptVersions.label));
+
+      const overall = await db
+        .select({
+          promptVersionId: generationRuns.promptVersionId,
+          observationCount: sql<number>`count(${scores.id})::int`.mapWith(Number),
+          averageScore:
+            sql<number>`avg(${scores.normalizedScore})::double precision`.mapWith(Number),
+          passedCount:
+            sql<number>`count(*) filter (where ${scores.passed} is true)::int`.mapWith(Number),
+          averageConfidence:
+            sql<number>`coalesce(avg(${scores.confidence}), 0)::double precision`.mapWith(Number),
+        })
+        .from(scores)
+        .innerJoin(evaluationRuns, eq(scores.evaluationRunId, evaluationRuns.id))
+        .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
+        .where(
+          and(
+            eq(evaluationRuns.experimentId, experiment.id),
+            eq(scores.kind, "overall"),
+            eq(scores.metricKey, "__overall__"),
+            isNotNull(scores.normalizedScore),
+          ),
+        )
+        .groupBy(generationRuns.promptVersionId);
+
+      const dimensions = await db
+        .select({
+          promptVersionId: generationRuns.promptVersionId,
+          metricKey: scores.metricKey,
+          observationCount: sql<number>`count(${scores.id})::int`.mapWith(Number),
+          averageScore:
+            sql<number>`avg(${scores.normalizedScore})::double precision`.mapWith(Number),
+          passedCount:
+            sql<number>`count(*) filter (where ${scores.passed} is true)::int`.mapWith(Number),
+          averageConfidence:
+            sql<number>`coalesce(avg(${scores.confidence}), 0)::double precision`.mapWith(Number),
+        })
+        .from(scores)
+        .innerJoin(evaluationRuns, eq(scores.evaluationRunId, evaluationRuns.id))
+        .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
+        .where(
+          and(
+            eq(evaluationRuns.experimentId, experiment.id),
+            eq(scores.kind, "dimension"),
+            isNotNull(scores.normalizedScore),
+          ),
+        )
+        .groupBy(generationRuns.promptVersionId, scores.metricKey)
+        .orderBy(asc(scores.metricKey), asc(generationRuns.promptVersionId));
+
+      const pairedObservations = await db
+        .select({
+          promptVersionId: generationRuns.promptVersionId,
+          repetition: generationRuns.repetition,
+          caseId: generationOutputs.caseId,
+          normalizedScore: scores.normalizedScore,
+        })
+        .from(scores)
+        .innerJoin(evaluationRuns, eq(scores.evaluationRunId, evaluationRuns.id))
+        .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
+        .innerJoin(generationOutputs, eq(scores.generationOutputId, generationOutputs.id))
+        .where(
+          and(
+            eq(evaluationRuns.experimentId, experiment.id),
+            eq(scores.kind, "overall"),
+            eq(scores.metricKey, "__overall__"),
+            isNotNull(scores.normalizedScore),
+          ),
+        );
+
+      return {
+        experiment,
+        datasetCaseCount: datasetVersion.caseCount,
+        promptVersions: selectedPromptVersions,
+        overall,
+        dimensions,
+        pairedObservations: pairedObservations.map((observation) => ({
+          ...observation,
+          normalizedScore: observation.normalizedScore ?? 0,
+        })),
       };
     },
 
