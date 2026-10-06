@@ -11,12 +11,19 @@ describe("readWorkerConfig", () => {
       modelProviderProduction: false,
       modelProviderAllowPrivateNetwork: true,
       modelProviderTimeoutMs: 60_000,
+      modelProviderSupportsSeed: true,
       concurrency: 4,
       healthHost: "127.0.0.1",
       healthPort: 4101,
       shutdownTimeoutMs: 30_000,
       logLevel: "info",
     });
+  });
+
+  it("allows seed support to be disabled for incompatible providers", () => {
+    expect(readWorkerConfig({ MODEL_PROVIDER_SUPPORTS_SEED: "false" }).modelProviderSupportsSeed).toBe(
+      false,
+    );
   });
 
   it("rejects an invalid concurrency", () => {

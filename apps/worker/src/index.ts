@@ -25,6 +25,7 @@ async function main(): Promise<void> {
     production: config.modelProviderProduction,
     allowPrivateNetwork: config.modelProviderAllowPrivateNetwork,
     timeoutMs: config.modelProviderTimeoutMs,
+    supportsSeed: config.modelProviderSupportsSeed,
   });
   const redis = createRedisConnection(config.redisUrl);
   let ready = false;

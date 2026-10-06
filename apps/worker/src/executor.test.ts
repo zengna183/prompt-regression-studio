@@ -11,7 +11,12 @@ import type {
 } from "@ai-chat-eval/db";
 import { describe, expect, it, vi } from "vitest";
 
-import { createEvaluationExecutor, stringifyCaseInput } from "./executor.js";
+import {
+  createEvaluationExecutor,
+  deriveEvaluationSeed,
+  deriveGenerationSeed,
+  stringifyCaseInput,
+} from "./executor.js";
 import type { Logger } from "./logger.js";
 
 const logger: Logger = {
@@ -29,8 +34,9 @@ function createSnapshot(): EvaluationExecutionSnapshot {
       id: "generation-run",
       model: "test-model",
       modelConfig: { temperature: 0, maxTokens: 128 },
+      repetition: 2,
     } as unknown as GenerationRun,
-    experiment: { datasetVersionId: "dataset-version" } as Experiment,
+    experiment: { datasetVersionId: "dataset-version", randomSeed: 42 } as Experiment,
     promptVersion: { compiledContent: "Answer briefly." } as PromptVersion,
     frameworkVersion: {
       definition: {
@@ -141,7 +147,17 @@ describe("evaluation executor", () => {
     expect(savedRecord.status).toBe("succeeded");
     expect(savedRecord.outputText).toBe("world");
     expect(savedRecord.outputHash).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/u));
-    expect(requests[0]).toMatchObject({ temperature: 0, max_tokens: 128 });
+    const expectedSeed = deriveGenerationSeed(42, 2);
+    expect(requests[0]).toMatchObject({
+      temperature: 0,
+      max_tokens: 128,
+      seed: expectedSeed,
+    });
+    expect(savedRecord).toMatchObject({ request: { seed: expectedSeed } });
+    expect(requests[1]).toMatchObject({
+      temperature: 0,
+      seed: deriveEvaluationSeed(42, 2, "case-1"),
+    });
   });
 
   it("does not execute a run that another worker already claimed", async () => {
@@ -227,5 +243,31 @@ describe("stringifyCaseInput", () => {
   it("preserves strings and serializes structured inputs", () => {
     expect(stringifyCaseInput("hello")).toBe("hello");
     expect(stringifyCaseInput({ question: "hello" })).toBe('{"question":"hello"}');
+  });
+});
+
+describe("deriveGenerationSeed", () => {
+  it("is stable and separates repetitions while staying in provider-safe range", () => {
+    const first = deriveGenerationSeed(42, 1);
+    expect(deriveGenerationSeed(42, 1)).toBe(first);
+    expect(deriveGenerationSeed(42, 2)).not.toBe(first);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(first).toBeLessThanOrEqual(2_147_483_647);
+  });
+
+  it.each([
+    [0.5, 1],
+    [42, 0],
+    [42, 1.5],
+  ])("rejects invalid seed inputs (%s, %s)", (randomSeed, repetition) => {
+    expect(() => deriveGenerationSeed(randomSeed, repetition)).toThrow();
+  });
+});
+
+describe("deriveEvaluationSeed", () => {
+  it("is stable per case and separates different cases", () => {
+    const first = deriveEvaluationSeed(42, 2, "case-1");
+    expect(deriveEvaluationSeed(42, 2, "case-1")).toBe(first);
+    expect(deriveEvaluationSeed(42, 2, "case-2")).not.toBe(first);
   });
 });

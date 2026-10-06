@@ -69,14 +69,35 @@ describe("OpenAICompatibleClient", () => {
       }),
     });
 
-    await client.complete({ messages: validRequest.messages, temperature: 0.2, maxTokens: 100 });
+    await client.complete({
+      messages: validRequest.messages,
+      temperature: 0.2,
+      maxTokens: 100,
+      seed: 42,
+    });
     expect(JSON.parse(sentBody)).toEqual({
       model: "default-model",
       messages: validRequest.messages,
       temperature: 0.2,
       max_tokens: 100,
+      seed: 42,
     });
   });
+
+  it.each([0.5, Number.POSITIVE_INFINITY, 2_147_483_648, -2_147_483_649])(
+    "rejects invalid seed %s",
+    async (seed) => {
+      const client = new OpenAICompatibleClient({
+        baseUrl: "https://api.example.com",
+        apiKey: validKey,
+        fetchImpl: vi.fn(),
+      });
+
+      await expect(client.complete({ ...validRequest, seed })).rejects.toMatchObject({
+        code: "PROVIDER_INVALID_REQUEST",
+      });
+    },
+  );
 
   it.each([
     ["http://api.example.com", true, false],

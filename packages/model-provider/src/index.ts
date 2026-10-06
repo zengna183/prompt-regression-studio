@@ -10,6 +10,7 @@ export interface ChatCompletionRequest {
   readonly messages: readonly ChatMessage[];
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly seed?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -324,6 +325,16 @@ function createRequestBody(request: ChatCompletionRequest, defaultModel: string 
       );
     }
     body.max_tokens = request.maxTokens;
+  }
+  if (request.seed !== undefined) {
+    if (
+      !Number.isSafeInteger(request.seed) ||
+      request.seed < -2_147_483_648 ||
+      request.seed > 2_147_483_647
+    ) {
+      throw new ProviderError("PROVIDER_INVALID_REQUEST", "seed must be a 32-bit signed integer.");
+    }
+    body.seed = request.seed;
   }
   return body;
 }

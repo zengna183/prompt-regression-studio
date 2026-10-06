@@ -22,6 +22,8 @@ export interface EvaluationExecutorOptions {
   readonly retryDelayMs?: number;
   /** A running task older than this is considered abandoned and may be reclaimed. */
   readonly staleRunAfterMs?: number;
+  /** Disable when the configured OpenAI-compatible endpoint rejects the seed field. */
+  readonly supportsSeed?: boolean;
   readonly fetchImpl?: typeof fetch;
 }
 
@@ -71,6 +73,13 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
       try {
         let succeededCount = 0;
         let failedCount = 0;
+        const generationSeed =
+          options.supportsSeed === false
+            ? undefined
+            : deriveGenerationSeed(
+                snapshot.experiment.randomSeed,
+                snapshot.generationRun.repetition,
+              );
         for (const evaluationCase of snapshot.cases) {
           const startedAt = Date.now();
           const messages: ChatMessage[] = [
@@ -83,6 +92,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               role: message.role,
               content: message.content,
             })),
+            ...(generationSeed === undefined ? {} : { seed: generationSeed }),
           };
 
           let response;
@@ -92,6 +102,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               {
                 model: snapshot.generationRun.model,
                 messages,
+                ...(generationSeed === undefined ? {} : { seed: generationSeed }),
                 ...readModelConfig(snapshot.generationRun.modelConfig),
               },
               options.maxProviderAttempts ?? 3,
@@ -126,7 +137,6 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               snapshot.generationRun.model,
             );
             const scored = await evaluateGeneratedOutput({
-              client,
               complete: (request) =>
                 completeWithRetry(
                   client,
@@ -140,6 +150,15 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               framework: snapshot.frameworkVersion.definition,
               expectedOutput: evaluationCase.expectedOutput,
               outputText: response.text,
+              ...(options.supportsSeed === false
+                ? {}
+                : {
+                    seed: deriveEvaluationSeed(
+                      snapshot.experiment.randomSeed,
+                      snapshot.generationRun.repetition,
+                      evaluationCase.id,
+                    ),
+                  }),
             });
             await options.repository.saveGenerationOutputAndScores(output, scored.scores);
             succeededCount += 1;
@@ -237,6 +256,34 @@ export function stringifyCaseInput(input: unknown): string {
   if (serialized === undefined) throw new Error("Evaluation case input is not JSON serializable");
   if (serialized.length > 1_000_000) throw new Error("Evaluation case input is too large");
   return serialized;
+}
+
+export function deriveGenerationSeed(randomSeed: number, repetition: number): number {
+  return deriveStableSeed(randomSeed, repetition, "generation");
+}
+
+export function deriveEvaluationSeed(
+  randomSeed: number,
+  repetition: number,
+  caseId: string,
+): number {
+  const normalizedCaseId = caseId.trim();
+  if (normalizedCaseId.length === 0) throw new Error("Evaluation case id is required");
+  return deriveStableSeed(randomSeed, repetition, `evaluation:${normalizedCaseId}`);
+}
+
+function deriveStableSeed(randomSeed: number, repetition: number, namespace: string): number {
+  if (!Number.isSafeInteger(randomSeed)) {
+    throw new Error("Experiment random seed must be a safe integer");
+  }
+  if (!Number.isSafeInteger(repetition) || repetition < 1) {
+    throw new Error("Generation repetition must be a positive integer");
+  }
+  const prefix = createHash("sha256")
+    .update(`${randomSeed}:${repetition}:${namespace}`, "utf8")
+    .digest()
+    .readUInt32BE(0);
+  return prefix % 2_147_483_648;
 }
 
 function normalizeFailure(error: unknown): { readonly code: string; readonly message: string } {

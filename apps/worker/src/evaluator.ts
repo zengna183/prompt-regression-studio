@@ -1,14 +1,18 @@
 import type { FrameworkDefinition, JsonValue, SaveScoreInput } from "@ai-chat-eval/db";
-import type { OpenAICompatibleClient } from "@prompt-regression/model-provider";
+import type {
+  ChatCompletionRequest,
+  ChatCompletionResponse,
+} from "@prompt-regression/model-provider";
 
 export interface EvaluateGeneratedOutputInput {
-  readonly client: OpenAICompatibleClient;
+  readonly complete: (request: ChatCompletionRequest) => Promise<ChatCompletionResponse>;
   readonly evaluationRunId: string;
   readonly generationOutputId: string;
   readonly evaluatorModel: string;
   readonly framework: FrameworkDefinition;
   readonly expectedOutput: JsonValue | null;
   readonly outputText: string;
+  readonly seed?: number;
 }
 
 export interface EvaluationScoreResult {
@@ -19,8 +23,10 @@ export interface EvaluationScoreResult {
 export async function evaluateGeneratedOutput(
   input: EvaluateGeneratedOutputInput,
 ): Promise<EvaluationScoreResult> {
-  const response = await input.client.complete({
+  const response = await input.complete({
     model: input.evaluatorModel,
+    temperature: 0,
+    ...(input.seed === undefined ? {} : { seed: input.seed }),
     messages: [
       {
         role: "system",

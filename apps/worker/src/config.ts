@@ -5,6 +5,7 @@ export interface WorkerConfig {
   modelProviderProduction: boolean;
   modelProviderAllowPrivateNetwork: boolean;
   modelProviderTimeoutMs: number;
+  modelProviderSupportsSeed: boolean;
   concurrency: number;
   healthHost: string;
   healthPort: number;
@@ -94,6 +95,7 @@ export function readWorkerConfig(environment: NodeJS.ProcessEnv = process.env): 
       60_000,
       600_000,
     ),
+    modelProviderSupportsSeed: readBoolean(environment, "MODEL_PROVIDER_SUPPORTS_SEED", true),
     concurrency: readPositiveInteger(environment, "WORKER_CONCURRENCY", 4, 128),
     healthHost: environment.WORKER_HEALTH_HOST?.trim() || "127.0.0.1",
     healthPort: readPort(environment, "WORKER_HEALTH_PORT", 4101),
