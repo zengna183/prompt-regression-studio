@@ -10,6 +10,7 @@ import { buildApp } from "./app.js";
 import { loadApiConfig } from "./config.js";
 import { createDatabaseCatalog } from "./database-catalog.js";
 import { createDatabaseDiagnosisStore } from "./database-diagnosis-store.js";
+import { createDatabaseDatasetService } from "./database-dataset-service.js";
 import { createDatabaseEvaluationDispatcher } from "./evaluation-dispatcher.js";
 import {
   createEvaluationOutboxProcessor,
@@ -43,6 +44,7 @@ const app = await buildApp({
   catalog: createDatabaseCatalog(database.db),
   diagnosisEngine,
   diagnosisStore: createDatabaseDiagnosisStore(database.db),
+  datasetService: createDatabaseDatasetService(database.db),
   evaluationDispatcher,
   experimentService: createDatabaseExperimentService(database.db, evaluationOutboxNotifier),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),

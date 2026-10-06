@@ -192,6 +192,97 @@ export const CreateFrameworkVersionSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const DatasetSourceSchema = Type.Union([
+  Type.Literal("manual"),
+  Type.Literal("ai_generated"),
+  Type.Literal("imported"),
+  Type.Literal("mixed"),
+]);
+
+export const DatasetSchema = Type.Object(
+  {
+    id: UuidSchema,
+    projectId: UuidSchema,
+    key: Type.String(),
+    name: Type.String(),
+    description: Type.Union([Type.String(), Type.Null()]),
+    createdAt: IsoDateSchema,
+    updatedAt: IsoDateSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const CreateDatasetSchema = Type.Object(
+  {
+    key: Type.String({ minLength: 2, maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }),
+    name: Type.String({ minLength: 2, maxLength: 120 }),
+    description: Type.Optional(Type.String({ maxLength: 1000 })),
+  },
+  { additionalProperties: false },
+);
+
+export const EvaluationCaseInputSchema = Type.Object(
+  {
+    caseKey: Type.String({
+      minLength: 1,
+      maxLength: 120,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    }),
+    name: Type.Optional(Type.String({ maxLength: 240 })),
+    input: Type.Unknown(),
+    expectedOutput: Type.Optional(Type.Unknown()),
+    metadata: Type.Optional(
+      Type.Record(Type.String({ minLength: 1, maxLength: 120 }), Type.Unknown()),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const CreateDatasetVersionSchema = Type.Object(
+  {
+    source: Type.Optional(DatasetSourceSchema),
+    cases: Type.Array(EvaluationCaseInputSchema, { minItems: 1, maxItems: 5000 }),
+    generationProvenance: Type.Optional(Type.Unknown()),
+    parentVersionId: Type.Optional(UuidSchema),
+    changeSummary: Type.Optional(Type.String({ maxLength: 1000 })),
+  },
+  { additionalProperties: false },
+);
+
+export const DatasetVersionSchema = Type.Object(
+  {
+    id: UuidSchema,
+    datasetId: UuidSchema,
+    version: Type.Integer({ minimum: 1 }),
+    status: PromptVersionStatusSchema,
+    source: DatasetSourceSchema,
+    contentHash: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    caseCount: Type.Integer({ minimum: 0 }),
+    generationProvenance: Type.Unknown(),
+    parentVersionId: Type.Union([UuidSchema, Type.Null()]),
+    changeSummary: Type.Union([Type.String(), Type.Null()]),
+    createdAt: IsoDateSchema,
+    publishedAt: Type.Union([IsoDateSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export const EvaluationCaseSchema = Type.Object(
+  {
+    id: UuidSchema,
+    datasetVersionId: UuidSchema,
+    caseKey: Type.String(),
+    name: Type.Union([Type.String(), Type.Null()]),
+    input: Type.Unknown(),
+    expectedOutput: Type.Unknown(),
+    metadata: Type.Record(Type.String(), Type.Unknown()),
+    contentHash: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    sortOrder: Type.Integer({ minimum: 0 }),
+    createdAt: IsoDateSchema,
+  },
+  { additionalProperties: false },
+);
+
 export const ExperimentStatusSchema = Type.Union([
   Type.Literal("draft"),
   Type.Literal("queued"),
@@ -286,6 +377,13 @@ export type EvaluationFramework = Static<typeof EvaluationFrameworkSchema>;
 export type FrameworkVersion = Static<typeof FrameworkVersionSchema>;
 export type CreateFramework = Static<typeof CreateFrameworkSchema>;
 export type CreateFrameworkVersion = Static<typeof CreateFrameworkVersionSchema>;
+export type DatasetSource = Static<typeof DatasetSourceSchema>;
+export type Dataset = Static<typeof DatasetSchema>;
+export type CreateDataset = Static<typeof CreateDatasetSchema>;
+export type EvaluationCaseInput = Static<typeof EvaluationCaseInputSchema>;
+export type CreateDatasetVersion = Static<typeof CreateDatasetVersionSchema>;
+export type DatasetVersion = Static<typeof DatasetVersionSchema>;
+export type EvaluationCase = Static<typeof EvaluationCaseSchema>;
 export type ExperimentPromptVersion = Static<typeof ExperimentPromptVersionSchema>;
 export type CreateExperiment = Static<typeof CreateExperimentSchema>;
 export type Experiment = Static<typeof ExperimentSchema>;

@@ -16,11 +16,13 @@ import Fastify, {
 
 import type { CatalogService, ReadinessCheck } from "./catalog-service.js";
 import type { DiagnosisStore } from "./diagnosis-store.js";
+import type { DatasetService } from "./dataset-service.js";
 import type { EvaluationDispatcher } from "./evaluation-dispatcher.js";
 import type { ExperimentService } from "./experiment-service.js";
 import { ApiError } from "./errors.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { diagnosisRoutes } from "./routes/diagnoses.js";
+import { datasetRoutes } from "./routes/datasets.js";
 import { evaluationRoutes } from "./routes/evaluations.js";
 import { experimentRoutes } from "./routes/experiments.js";
 
@@ -28,6 +30,7 @@ export interface BuildAppOptions {
   catalog: CatalogService;
   diagnosisEngine: DiagnosisEngine;
   diagnosisStore?: DiagnosisStore;
+  datasetService?: DatasetService;
   evaluationDispatcher?: EvaluationDispatcher;
   experimentService?: ExperimentService;
   maxConcurrentDiagnoses: number;
@@ -198,6 +201,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   );
 
   await app.register(catalogRoutes(options.catalog));
+  await app.register(datasetRoutes(options.datasetService));
   await app.register(
     diagnosisRoutes({
       engine: options.diagnosisEngine,

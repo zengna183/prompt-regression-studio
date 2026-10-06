@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildApp, type BuildAppOptions } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
+import type { DatasetService } from "./dataset-service.js";
 import type { ExperimentService } from "./experiment-service.js";
 import type {
   DiagnosisRunDetail,
@@ -331,6 +332,114 @@ describe("API", () => {
     expect(started.statusCode).toBe(202);
     expect(started.json()).toEqual({ experimentId, status: "queued", evaluationRunIds: [evaluationRunId] });
     expect(start).toHaveBeenCalledWith(projectId, experimentId, startRequest);
+    await app.close();
+  });
+
+  it("creates, versions, reads, and publishes an evaluation dataset", async () => {
+    const projectId = "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5";
+    const datasetId = "69d92e0c-cb85-49e9-94c6-c85082377a3a";
+    const versionId = "d159a2ed-d20c-4296-bd7e-28d20b508c1d";
+    const caseId = "023edc7e-f870-4228-91a6-5a4e5de0c22a";
+    const now = new Date().toISOString();
+    const dataset = {
+      id: datasetId,
+      projectId,
+      key: "support-cases",
+      name: "Support cases",
+      description: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const draftVersion = {
+      id: versionId,
+      datasetId,
+      version: 1,
+      status: "draft" as const,
+      source: "manual" as const,
+      contentHash: "a".repeat(64),
+      caseCount: 1,
+      generationProvenance: null,
+      parentVersionId: null,
+      changeSummary: null,
+      createdAt: now,
+      publishedAt: null,
+    };
+    const evaluationCase = {
+      id: caseId,
+      datasetVersionId: versionId,
+      caseKey: "greeting.zh",
+      name: "Chinese greeting",
+      input: { message: "你好" },
+      expectedOutput: { intent: "greeting" },
+      metadata: {},
+      contentHash: "b".repeat(64),
+      sortOrder: 0,
+      createdAt: now,
+    };
+    const create = vi.fn(() => Promise.resolve(dataset));
+    const createVersion = vi.fn(() => Promise.resolve(draftVersion));
+    const listCases = vi.fn(() => Promise.resolve([evaluationCase]));
+    const publishVersion = vi.fn(() =>
+      Promise.resolve({ ...draftVersion, status: "published" as const, publishedAt: now }),
+    );
+    const service: DatasetService = {
+      list: vi.fn(() => Promise.resolve([dataset])),
+      create,
+      listVersions: vi.fn(() => Promise.resolve([draftVersion])),
+      createVersion,
+      listCases,
+      publishVersion,
+    };
+    const app = await buildTestApp(
+      new TestCatalog(),
+      new RecordingDiagnosisEngine(),
+      2,
+      undefined,
+      { datasetService: service },
+    );
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/datasets`,
+      payload: { key: dataset.key, name: dataset.name },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ id: datasetId, key: dataset.key });
+
+    const versionRequest = {
+      source: "manual" as const,
+      cases: [
+        {
+          caseKey: evaluationCase.caseKey,
+          name: evaluationCase.name,
+          input: evaluationCase.input,
+          expectedOutput: evaluationCase.expectedOutput,
+        },
+      ],
+    };
+    const versioned = await app.inject({
+      method: "POST",
+      url: `/v1/datasets/${datasetId}/versions`,
+      payload: versionRequest,
+    });
+    expect(versioned.statusCode).toBe(201);
+    expect(versioned.json()).toMatchObject({ id: versionId, caseCount: 1, status: "draft" });
+    expect(createVersion).toHaveBeenCalledWith(datasetId, versionRequest);
+
+    const cases = await app.inject({
+      method: "GET",
+      url: `/v1/dataset-versions/${versionId}/cases`,
+    });
+    expect(cases.statusCode).toBe(200);
+    expect(cases.json()).toEqual([evaluationCase]);
+    expect(listCases).toHaveBeenCalledWith(versionId);
+
+    const published = await app.inject({
+      method: "POST",
+      url: `/v1/dataset-versions/${versionId}/publish`,
+    });
+    expect(published.statusCode).toBe(200);
+    expect(published.json()).toMatchObject({ id: versionId, status: "published" });
     await app.close();
   });
 
