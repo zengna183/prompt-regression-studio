@@ -13,11 +13,14 @@ import {
   scores,
   type EvaluationCase,
   type EvaluationRun,
+  type Experiment,
   type GenerationOutput,
   type GenerationRun,
   type JsonValue,
   type Score,
 } from "../schema.js";
+
+type DatabaseTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export interface EvaluationExecutionSnapshot {
   readonly evaluationRun: EvaluationRun;
@@ -129,24 +132,49 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
       const staleAfterMs = normalizeStaleAfter(options?.staleAfterMs);
       const now = new Date();
       const staleBefore = new Date(now.getTime() - staleAfterMs);
-      const [claimed] = await db
-        .update(evaluationRuns)
-        .set({ status: "running", startedAt: now })
-        .where(
-          and(
-            eq(evaluationRuns.id, evaluationRunId),
-            or(
-              eq(evaluationRuns.status, "queued"),
-              and(
-                eq(evaluationRuns.status, "running"),
-                isNotNull(evaluationRuns.startedAt),
-                lt(evaluationRuns.startedAt, staleBefore),
+      return db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(evaluationRuns)
+          .set({ status: "running", startedAt: now })
+          .where(
+            and(
+              eq(evaluationRuns.id, evaluationRunId),
+              or(
+                eq(evaluationRuns.status, "queued"),
+                and(
+                  eq(evaluationRuns.status, "running"),
+                  isNotNull(evaluationRuns.startedAt),
+                  lt(evaluationRuns.startedAt, staleBefore),
+                ),
               ),
             ),
-          ),
-        )
-        .returning();
-      return claimed ?? null;
+          )
+          .returning();
+        if (!claimed) return null;
+
+        const [experiment] = await tx
+          .select({ id: experiments.id, startedAt: experiments.startedAt })
+          .from(experiments)
+          .where(eq(experiments.id, claimed.experimentId))
+          .for("update")
+          .limit(1);
+        if (!experiment) {
+          throw new EntityNotFoundError("Experiment", claimed.experimentId);
+        }
+
+        await tx
+          .update(experiments)
+          .set({
+            status: "running",
+            startedAt: experiment.startedAt ?? now,
+            completedAt: null,
+            failureCode: null,
+            failureMessage: null,
+            updatedAt: now,
+          })
+          .where(eq(experiments.id, claimed.experimentId));
+        return claimed;
+      });
     },
 
     async startGenerationRun(generationRunId) {
@@ -284,36 +312,95 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
 
     async completeEvaluationRun(evaluationRunId, result) {
       const status = result.failedCount === 0 ? "succeeded" : "partially_succeeded";
-      const [completed] = await db
-        .update(evaluationRuns)
-        .set({
-          status,
-          requestedCount: result.succeededCount + result.failedCount,
-          succeededCount: result.succeededCount,
-          failedCount: result.failedCount,
-          completedAt: new Date(),
-        })
-        .where(eq(evaluationRuns.id, evaluationRunId))
-        .returning();
-      if (!completed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
-      return completed;
+      const now = new Date();
+      return db.transaction(async (tx) => {
+        const [completed] = await tx
+          .update(evaluationRuns)
+          .set({
+            status,
+            requestedCount: result.succeededCount + result.failedCount,
+            succeededCount: result.succeededCount,
+            failedCount: result.failedCount,
+            completedAt: now,
+          })
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .returning();
+        if (!completed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+        await synchronizeExperimentStatus(tx, completed.experimentId, now);
+        return completed;
+      });
     },
 
     async failEvaluationRun(evaluationRunId, failure) {
-      const [failed] = await db
-        .update(evaluationRuns)
-        .set({
-          status: "failed",
-          failureCode: failure.code.slice(0, 120),
-          failureMessage: failure.message.slice(0, 2_000),
-          completedAt: new Date(),
-        })
-        .where(eq(evaluationRuns.id, evaluationRunId))
-        .returning();
-      if (!failed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
-      return failed;
+      const now = new Date();
+      return db.transaction(async (tx) => {
+        const [failed] = await tx
+          .update(evaluationRuns)
+          .set({
+            status: "failed",
+            failureCode: failure.code.slice(0, 120),
+            failureMessage: failure.message.slice(0, 2_000),
+            completedAt: now,
+          })
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .returning();
+        if (!failed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+        await synchronizeExperimentStatus(tx, failed.experimentId, now);
+        return failed;
+      });
     },
   };
+}
+
+/**
+ * Converts child-run state into the single lifecycle state shown for an experiment.
+ * Active work always wins; once all runs are terminal, any incomplete run makes the
+ * experiment failed or cancelled instead of reporting a misleading success.
+ */
+export function deriveExperimentStatus(
+  statuses: readonly EvaluationRun["status"][],
+): Experiment["status"] {
+  if (statuses.some((status) => status === "running")) return "running";
+  if (statuses.length === 0 || statuses.some((status) => status === "queued")) return "queued";
+  if (statuses.some((status) => status === "failed" || status === "partially_succeeded")) {
+    return "failed";
+  }
+  if (statuses.some((status) => status === "cancelled")) return "cancelled";
+  return "succeeded";
+}
+
+async function synchronizeExperimentStatus(
+  tx: DatabaseTransaction,
+  experimentId: string,
+  now: Date,
+): Promise<void> {
+  const [experiment] = await tx
+    .select({ id: experiments.id, startedAt: experiments.startedAt })
+    .from(experiments)
+    .where(eq(experiments.id, experimentId))
+    .for("update")
+    .limit(1);
+  if (!experiment) throw new EntityNotFoundError("Experiment", experimentId);
+
+  const runs = await tx
+    .select({ status: evaluationRuns.status })
+    .from(evaluationRuns)
+    .where(eq(evaluationRuns.experimentId, experimentId));
+  const status = deriveExperimentStatus(runs.map((run) => run.status));
+  const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
+  const failed = status === "failed";
+
+  await tx
+    .update(experiments)
+    .set({
+      status,
+      startedAt: experiment.startedAt ?? now,
+      completedAt: terminal ? now : null,
+      failureCode: failed ? "EVALUATION_RUN_FAILED" : null,
+      failureMessage: failed ? "One or more evaluation runs did not complete successfully" : null,
+      updatedAt: now,
+    })
+    .where(eq(experiments.id, experimentId));
 }
 
 function normalizeStaleAfter(value: number | undefined): number {
