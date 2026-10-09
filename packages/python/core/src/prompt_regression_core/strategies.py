@@ -60,7 +60,7 @@ def detect_regression(bundle: RegressionBundle) -> Regression:
         }
         hard = baseline.passed and not candidate.passed
         primary_delta = metric_deltas[config.primary_metric]
-        metric = primary_delta <= -config.metric_drop_threshold
+        metric = primary_delta < 0 and primary_delta <= -config.metric_drop_threshold
         if not hard and not metric:
             continue
         kind = (

@@ -28,6 +28,7 @@ from prompt_regression_core.strategies import (
     SingleSegmentRevertStrategy,
     StableSegmentDiff,
     ThresholdEvidenceScorer,
+    detect_regression,
 )
 from prompt_regression_core.model import PromptChangeType
 from prompt_regression_core.ports import (
@@ -50,6 +51,15 @@ EXAMPLE = (
 
 
 class DiagnosisPipelineTest(unittest.TestCase):
+    def test_zero_threshold_requires_an_actual_drop(self) -> None:
+        raw = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+        raw["detection"]["metric_drop_threshold"] = 0
+        regression = detect_regression(parse_bundle(raw))
+        self.assertEqual(
+            {case.test_case_id for case in regression.cases},
+            {"case_missing_city", "case_missing_order"},
+        )
+
     def test_complete_vertical_slice_links_controlled_evidence(self) -> None:
         bundle = load_bundle(EXAMPLE)
         report = DiagnosisPipeline().run(bundle)
