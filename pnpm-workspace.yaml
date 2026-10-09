@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# Keep the compatible 5.x patch that fixes GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p.
+overrides:
+  "brace-expansion@>=5.0.0 <5.0.11": 5.0.11
+
 allowBuilds:
   esbuild: true
   msgpackr-extract: true

@@ -42,7 +42,9 @@ export function evaluationRoutes(
           "location",
           `/v1/evaluation-runs/${encodeURIComponent(request.params.evaluationRunId)}`,
         );
-        return reply.code(202).send({ evaluationRunId: request.params.evaluationRunId, status: "queued" });
+        return reply
+          .code(202)
+          .send({ evaluationRunId: request.params.evaluationRunId, status: "queued" });
       },
     );
     return Promise.resolve();

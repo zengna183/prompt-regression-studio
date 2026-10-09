@@ -301,7 +301,8 @@ export function normalizeEvaluationCases(
   const keys = new Set<string>();
   return input.map((item, index) => {
     const caseKey = normalizeCaseKey(item.caseKey, index);
-    if (keys.has(caseKey)) throw new VersionContentError(`Duplicate evaluation case key: ${caseKey}`);
+    if (keys.has(caseKey))
+      throw new VersionContentError(`Duplicate evaluation case key: ${caseKey}`);
     keys.add(caseKey);
     const name = normalizeCaseName(item.name, index);
     const metadata = normalizeMetadata(item.metadata, index);

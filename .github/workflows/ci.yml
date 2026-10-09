@@ -9,6 +9,21 @@ permissions:
   contents: read
 
 jobs:
+  dependency-security:
+    name: Production dependency security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level high
+
   python-core:
     name: Python core and official plugins
     runs-on: ubuntu-latest
@@ -68,8 +83,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
-      - name: Audit production dependencies
-        run: pnpm audit --prod --audit-level high
       - name: Produce report for cross-language contract validation
         env:
           PYTHONPATH: packages/python/core/src

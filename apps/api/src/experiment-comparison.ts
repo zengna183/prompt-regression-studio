@@ -3,9 +3,7 @@ import type { ExperimentComparisonRecord } from "@ai-chat-eval/db";
 
 const scoreEpsilon = 1e-12;
 
-export function buildExperimentComparison(
-  data: ExperimentComparisonRecord,
-): ExperimentComparison {
+export function buildExperimentComparison(data: ExperimentComparisonRecord): ExperimentComparison {
   const baseline = data.promptVersions.find((version) => version.isBaseline);
   if (!baseline || data.promptVersions.filter((version) => version.isBaseline).length !== 1) {
     throw new Error("Experiment must contain exactly one baseline Prompt version");
@@ -99,9 +97,11 @@ export function buildExperimentComparison(
     baselinePromptVersionId: baseline.promptVersionId,
     expectedObservationsPerVersion,
     isComplete:
-      terminal && versions.every((version) => version.observationCount >= expectedObservationsPerVersion),
+      terminal &&
+      versions.every((version) => version.observationCount >= expectedObservationsPerVersion),
     versions: versions.sort((left, right) => {
-      if (left.rank === null) return right.rank === null ? left.label.localeCompare(right.label) : 1;
+      if (left.rank === null)
+        return right.rank === null ? left.label.localeCompare(right.label) : 1;
       if (right.rank === null) return -1;
       return left.rank - right.rank || left.label.localeCompare(right.label);
     }),

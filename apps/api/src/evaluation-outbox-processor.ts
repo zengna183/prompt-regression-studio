@@ -46,7 +46,11 @@ export function createEvaluationOutboxProcessor(
   const maxAttempts = boundedInteger(options.maxAttempts, 10, 1, 100, "maxAttempts");
   let timer: ReturnType<typeof setInterval> | undefined;
   let active:
-    | Promise<{ readonly dispatched: number; readonly rescheduled: number; readonly failed: number }>
+    | Promise<{
+        readonly dispatched: number;
+        readonly rescheduled: number;
+        readonly failed: number;
+      }>
     | undefined;
   let scheduled: Promise<void> | undefined;
   let stopping = false;

@@ -12,5 +12,9 @@ export interface ExperimentService {
   get(projectId: string, experimentId: string): Promise<ExperimentDetail>;
   compare(projectId: string, experimentId: string): Promise<ExperimentComparison>;
   create(projectId: string, input: CreateExperiment): Promise<Experiment>;
-  start(projectId: string, experimentId: string, input: StartExperiment): Promise<StartedExperiment>;
+  start(
+    projectId: string,
+    experimentId: string,
+    input: StartExperiment,
+  ): Promise<StartedExperiment>;
 }

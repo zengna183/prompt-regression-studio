@@ -26,11 +26,7 @@ describe("evaluation outbox processor", () => {
       failed: 0,
     });
     expect(repository.markDispatched).toHaveBeenCalledWith(successfulClaim);
-    expect(repository.recordFailure).toHaveBeenCalledWith(
-      failedClaim,
-      "QUEUE_DISPATCH_FAILED",
-      10,
-    );
+    expect(repository.recordFailure).toHaveBeenCalledWith(failedClaim, "QUEUE_DISPATCH_FAILED", 10);
   });
 
   it("coalesces overlapping polls", async () => {

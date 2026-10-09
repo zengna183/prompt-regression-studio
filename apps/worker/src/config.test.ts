@@ -21,9 +21,9 @@ describe("readWorkerConfig", () => {
   });
 
   it("allows seed support to be disabled for incompatible providers", () => {
-    expect(readWorkerConfig({ MODEL_PROVIDER_SUPPORTS_SEED: "false" }).modelProviderSupportsSeed).toBe(
-      false,
-    );
+    expect(
+      readWorkerConfig({ MODEL_PROVIDER_SUPPORTS_SEED: "false" }).modelProviderSupportsSeed,
+    ).toBe(false);
   });
 
   it("rejects an invalid concurrency", () => {

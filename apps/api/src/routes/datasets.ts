@@ -48,9 +48,7 @@ export function datasetRoutes(service: DatasetService | undefined): FastifyPlugi
         },
       },
       async (request, reply) =>
-        reply
-          .code(201)
-          .send(await requireService().create(request.params.projectId, request.body)),
+        reply.code(201).send(await requireService().create(request.params.projectId, request.body)),
     );
 
     app.get(

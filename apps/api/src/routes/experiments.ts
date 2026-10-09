@@ -1,8 +1,8 @@
 import {
-    CreateExperimentSchema,
-    ExperimentDetailSchema,
-    ExperimentComparisonSchema,
-    ExperimentSchema,
+  CreateExperimentSchema,
+  ExperimentDetailSchema,
+  ExperimentComparisonSchema,
+  ExperimentSchema,
   StartExperimentSchema,
   StartedExperimentSchema,
   UuidSchema,
@@ -19,7 +19,9 @@ const ExperimentParams = Type.Object(
   { additionalProperties: false },
 );
 
-export function experimentRoutes(service: ExperimentService | undefined): FastifyPluginAsyncTypebox {
+export function experimentRoutes(
+  service: ExperimentService | undefined,
+): FastifyPluginAsyncTypebox {
   return (app) => {
     app.get(
       "/v1/projects/:projectId/experiments",
@@ -32,7 +34,11 @@ export function experimentRoutes(service: ExperimentService | undefined): Fastif
       },
       async (request) => {
         if (!service) {
-          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment queries are not configured.",
+          );
         }
         return service.list(request.params.projectId);
       },
@@ -48,7 +54,11 @@ export function experimentRoutes(service: ExperimentService | undefined): Fastif
       },
       async (request) => {
         if (!service) {
-          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment queries are not configured.",
+          );
         }
         return service.get(request.params.projectId, request.params.experimentId);
       },
@@ -64,7 +74,11 @@ export function experimentRoutes(service: ExperimentService | undefined): Fastif
       },
       async (request) => {
         if (!service) {
-          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment queries are not configured.");
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment queries are not configured.",
+          );
         }
         return service.compare(request.params.projectId, request.params.experimentId);
       },
@@ -82,7 +96,11 @@ export function experimentRoutes(service: ExperimentService | undefined): Fastif
       },
       async (request, reply) => {
         if (!service) {
-          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment creation is not configured.");
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment creation is not configured.",
+          );
         }
         return reply.code(201).send(await service.create(request.params.projectId, request.body));
       },
@@ -101,7 +119,11 @@ export function experimentRoutes(service: ExperimentService | undefined): Fastif
       },
       async (request, reply) => {
         if (!service) {
-          throw new ApiError(503, "EXPERIMENTS_UNAVAILABLE", "Experiment execution is not configured.");
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment execution is not configured.",
+          );
         }
         const { projectId, experimentId } = request.params;
         return reply.code(202).send(await service.start(projectId, experimentId, request.body));

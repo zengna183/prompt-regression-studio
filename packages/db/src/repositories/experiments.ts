@@ -176,7 +176,10 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
           )
           .limit(1);
         if (!frameworkVersion) {
-          throw new EntityNotFoundError("Published evaluation framework version", normalized.frameworkVersionId);
+          throw new EntityNotFoundError(
+            "Published evaluation framework version",
+            normalized.frameworkVersionId,
+          );
         }
 
         const selectedPromptVersions = await tx
@@ -194,7 +197,10 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
             ),
           );
         if (selectedPromptVersions.length !== normalized.promptVersions.length) {
-          throw new EntityNotFoundError("Published prompt version", "one or more requested versions");
+          throw new EntityNotFoundError(
+            "Published prompt version",
+            "one or more requested versions",
+          );
         }
 
         const [created] = await tx
@@ -332,10 +338,12 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
         .select({
           promptVersionId: generationRuns.promptVersionId,
           observationCount: sql<number>`count(${scores.id})::int`.mapWith(Number),
-          averageScore:
-            sql<number>`avg(${scores.normalizedScore})::double precision`.mapWith(Number),
-          passedCount:
-            sql<number>`count(*) filter (where ${scores.passed} is true)::int`.mapWith(Number),
+          averageScore: sql<number>`avg(${scores.normalizedScore})::double precision`.mapWith(
+            Number,
+          ),
+          passedCount: sql<number>`count(*) filter (where ${scores.passed} is true)::int`.mapWith(
+            Number,
+          ),
           averageConfidence:
             sql<number>`coalesce(avg(${scores.confidence}), 0)::double precision`.mapWith(Number),
         })
@@ -357,10 +365,12 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
           promptVersionId: generationRuns.promptVersionId,
           metricKey: scores.metricKey,
           observationCount: sql<number>`count(${scores.id})::int`.mapWith(Number),
-          averageScore:
-            sql<number>`avg(${scores.normalizedScore})::double precision`.mapWith(Number),
-          passedCount:
-            sql<number>`count(*) filter (where ${scores.passed} is true)::int`.mapWith(Number),
+          averageScore: sql<number>`avg(${scores.normalizedScore})::double precision`.mapWith(
+            Number,
+          ),
+          passedCount: sql<number>`count(*) filter (where ${scores.passed} is true)::int`.mapWith(
+            Number,
+          ),
           averageConfidence:
             sql<number>`coalesce(avg(${scores.confidence}), 0)::double precision`.mapWith(Number),
         })
@@ -416,7 +426,9 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
         const [experiment] = await tx
           .select()
           .from(experiments)
-          .where(and(eq(experiments.id, input.experimentId), eq(experiments.projectId, input.projectId)))
+          .where(
+            and(eq(experiments.id, input.experimentId), eq(experiments.projectId, input.projectId)),
+          )
           .for("update")
           .limit(1);
         if (!experiment) throw new EntityNotFoundError("Experiment", input.experimentId);
@@ -466,7 +478,10 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
           .select({ caseCount: count() })
           .from(evaluationCases)
           .where(eq(evaluationCases.datasetVersionId, experiment.datasetVersionId));
-        assertCaseBudget(selectedPrompts.length * experiment.repetitions, datasetSize?.caseCount ?? 0);
+        assertCaseBudget(
+          selectedPrompts.length * experiment.repetitions,
+          datasetSize?.caseCount ?? 0,
+        );
 
         const evaluationRunIds: string[] = [];
         for (const selectedPrompt of selectedPrompts) {

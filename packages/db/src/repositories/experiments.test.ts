@@ -82,7 +82,9 @@ describe("experiment start planning", () => {
       provider: "openai-compatible" as const,
       model: "chat-model",
     };
-    expect(() => normalizeStartExperiment({ ...start, modelConfig: { temperature: -1 } })).toThrow();
+    expect(() =>
+      normalizeStartExperiment({ ...start, modelConfig: { temperature: -1 } }),
+    ).toThrow();
     expect(() => normalizeStartExperiment({ ...start, modelConfig: { maxTokens: 0 } })).toThrow();
     expect(() => normalizeStartExperiment({ ...start, evaluatorModel: " " })).toThrow();
     expect(() => assertRunBudget(2, 50)).not.toThrow();
