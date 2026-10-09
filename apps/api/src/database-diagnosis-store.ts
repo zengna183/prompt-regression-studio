@@ -11,11 +11,12 @@ import type { DiagnosisRunDetail, DiagnosisRunSummary, DiagnosisStore } from "./
 export function createDatabaseDiagnosisStore(db: Database): DiagnosisStore {
   const repository = createDiagnosisRunRepository(db);
   return {
-    async begin(bundleId, bundle) {
+    async begin(bundleId, bundle, projectId) {
       return summary(
         await repository.begin({
           bundleId,
           inputBundle: asDatabaseJson(bundle),
+          ...(projectId === undefined ? {} : { projectId }),
         }),
       );
     },

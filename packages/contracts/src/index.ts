@@ -365,6 +365,29 @@ export const StartedExperimentSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ExperimentDiagnosisDetectionSchema = Type.Object(
+  {
+    primaryMetric: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+    metricDropThreshold: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    minTargetCases: Type.Optional(Type.Integer({ minimum: 1 })),
+    minControlCases: Type.Optional(Type.Integer({ minimum: 1 })),
+    supportRecoveryRatio: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    rejectRecoveryRatio: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    maxControlDamage: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  },
+  { additionalProperties: false },
+);
+
+/** Selects one paired repetition so the diagnosis never averages away hard failures. */
+export const CreateExperimentDiagnosisSchema = Type.Object(
+  {
+    candidatePromptVersionId: UuidSchema,
+    repetition: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    detection: Type.Optional(ExperimentDiagnosisDetectionSchema),
+  },
+  { additionalProperties: false },
+);
+
 export const EvaluationRunStatusSchema = Type.Union([
   Type.Literal("queued"),
   Type.Literal("running"),
@@ -506,6 +529,8 @@ export type CreateExperiment = Static<typeof CreateExperimentSchema>;
 export type Experiment = Static<typeof ExperimentSchema>;
 export type StartExperiment = Static<typeof StartExperimentSchema>;
 export type StartedExperiment = Static<typeof StartedExperimentSchema>;
+export type ExperimentDiagnosisDetection = Static<typeof ExperimentDiagnosisDetectionSchema>;
+export type CreateExperimentDiagnosis = Static<typeof CreateExperimentDiagnosisSchema>;
 export type EvaluationRunStatus = Static<typeof EvaluationRunStatusSchema>;
 export type ExperimentProgress = Static<typeof ExperimentProgressSchema>;
 export type ExperimentRunSummary = Static<typeof ExperimentRunSummarySchema>;

@@ -19,6 +19,7 @@ import type { DiagnosisStore } from "./diagnosis-store.js";
 import type { DatasetService } from "./dataset-service.js";
 import type { EvaluationDispatcher } from "./evaluation-dispatcher.js";
 import type { ExperimentService } from "./experiment-service.js";
+import type { ExperimentDiagnosisSource } from "./experiment-diagnosis.js";
 import { ApiError } from "./errors.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { diagnosisRoutes } from "./routes/diagnoses.js";
@@ -30,6 +31,7 @@ export interface BuildAppOptions {
   catalog: CatalogService;
   diagnosisEngine: DiagnosisEngine;
   diagnosisStore?: DiagnosisStore;
+  experimentDiagnosisSource?: ExperimentDiagnosisSource;
   datasetService?: DatasetService;
   evaluationDispatcher?: EvaluationDispatcher;
   experimentService?: ExperimentService;
@@ -209,6 +211,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       rateLimitMax: diagnosisRateLimitMax,
       rateLimitWindowMs,
       ...(options.diagnosisStore ? { store: options.diagnosisStore } : {}),
+      ...(options.experimentDiagnosisSource
+        ? { experimentSource: options.experimentDiagnosisSource }
+        : {}),
     }),
   );
   await app.register(evaluationRoutes(options.evaluationDispatcher));

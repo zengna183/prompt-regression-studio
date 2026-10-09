@@ -28,7 +28,11 @@ export interface ListDiagnosisRunsInput {
 }
 
 export interface DiagnosisStore {
-  begin(bundleId: string, bundle: JsonObject): Promise<DiagnosisRunSummary>;
+  begin(
+    bundleId: string,
+    bundle: JsonObject,
+    projectId?: string | null,
+  ): Promise<DiagnosisRunSummary>;
   complete(id: string, report: JsonObject): Promise<DiagnosisRunDetail>;
   fail(
     id: string,

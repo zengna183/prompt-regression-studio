@@ -21,6 +21,7 @@ import { buildApp, type BuildAppOptions } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
 import type { DatasetService } from "./dataset-service.js";
 import type { ExperimentService } from "./experiment-service.js";
+import type { ExperimentDiagnosisSource } from "./experiment-diagnosis.js";
 import type {
   DiagnosisRunDetail,
   DiagnosisRunSummary,
@@ -302,7 +303,11 @@ describe("API", () => {
       }),
     );
     const start = vi.fn(() =>
-      Promise.resolve({ experimentId, status: "queued" as const, evaluationRunIds: [evaluationRunId] }),
+      Promise.resolve({
+        experimentId,
+        status: "queued" as const,
+        evaluationRunIds: [evaluationRunId],
+      }),
     );
     const experiment = await create();
     create.mockClear();
@@ -405,7 +410,11 @@ describe("API", () => {
       payload: startRequest,
     });
     expect(started.statusCode).toBe(202);
-    expect(started.json()).toEqual({ experimentId, status: "queued", evaluationRunIds: [evaluationRunId] });
+    expect(started.json()).toEqual({
+      experimentId,
+      status: "queued",
+      evaluationRunIds: [evaluationRunId],
+    });
     expect(start).toHaveBeenCalledWith(projectId, experimentId, startRequest);
 
     const listed = await app.inject({
@@ -605,6 +614,68 @@ describe("API", () => {
     await app.close();
   });
 
+  it("builds and persists a project-scoped diagnosis from saved experiment data", async () => {
+    const projectId = "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5";
+    const experimentId = "c373156d-03a8-4537-995e-183b388d2bb4";
+    const candidatePromptVersionId = "2f4c89f0-3b6b-45d9-8a57-9e7a239bc8d4";
+    const source = new RecordingExperimentDiagnosisSource({
+      ...canonicalBundle,
+      bundle_id: "experiment_bundle",
+    });
+    const store = new MemoryDiagnosisStore();
+    const engine = new RecordingDiagnosisEngine();
+    engine.report = {
+      ...persistableDiagnosisReport,
+      bundle_id: "experiment_bundle",
+    };
+    const app = await buildTestApp(new TestCatalog(), engine, 2, store, {
+      experimentDiagnosisSource: source,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/experiments/${experimentId}/diagnoses`,
+      payload: { candidatePromptVersionId, repetition: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(source.calls).toEqual([
+      {
+        projectId,
+        experimentId,
+        input: { candidatePromptVersionId, repetition: 2 },
+      },
+    ]);
+    expect(engine.receivedBundle).toEqual({
+      ...canonicalBundle,
+      bundle_id: "experiment_bundle",
+    });
+    const scopedHistory = await app.inject({
+      method: "GET",
+      url: `/v1/diagnoses?projectId=${projectId}`,
+    });
+    expect(scopedHistory.statusCode).toBe(200);
+    expect(scopedHistory.json()).toMatchObject({
+      items: [{ projectId, bundleId: "experiment_bundle", status: "succeeded" }],
+    });
+    await app.close();
+  });
+
+  it("does not expose an experiment diagnosis route without a trusted data source", async () => {
+    const app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/projects/4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5/experiments/c373156d-03a8-4537-995e-183b388d2bb4/diagnoses",
+      payload: {
+        candidatePromptVersionId: "2f4c89f0-3b6b-45d9-8a57-9e7a239bc8d4",
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ code: "EXPERIMENT_DIAGNOSIS_UNAVAILABLE" });
+    await app.close();
+  });
+
   it("stores a safe terminal failure without leaking engine diagnostics", async () => {
     const store = new MemoryDiagnosisStore();
     const engine = new RejectingDiagnosisEngine(
@@ -762,11 +833,15 @@ async function buildTestApp(
 class MemoryDiagnosisStore implements DiagnosisStore {
   readonly #runs = new Map<string, DiagnosisRunDetail>();
 
-  begin(bundleId: string): Promise<DiagnosisRunSummary> {
+  begin(
+    bundleId: string,
+    _bundle: JsonObject,
+    projectId: string | null = null,
+  ): Promise<DiagnosisRunSummary> {
     const now = new Date().toISOString();
     const run: DiagnosisRunDetail = {
       id: randomUUID(),
-      projectId: null,
+      projectId,
       bundleId,
       status: "running",
       inputBundleHash: null,
@@ -845,12 +920,32 @@ class RecordingDiagnosisEngine implements DiagnosisEngine {
   callCount = 0;
   receivedBundle: unknown;
   receivedSignal: AbortSignal | undefined;
+  report: JsonObject = diagnosisReport;
 
   diagnose(bundle: unknown, options: DiagnosisOptions = {}): Promise<JsonObject> {
     this.callCount += 1;
     this.receivedBundle = bundle;
     this.receivedSignal = options.signal;
-    return Promise.resolve(diagnosisReport);
+    return Promise.resolve(this.report);
+  }
+}
+
+class RecordingExperimentDiagnosisSource implements ExperimentDiagnosisSource {
+  readonly calls: Array<{
+    readonly projectId: string;
+    readonly experimentId: string;
+    readonly input: Parameters<ExperimentDiagnosisSource["build"]>[2];
+  }> = [];
+
+  constructor(readonly bundle: JsonObject) {}
+
+  build(
+    projectId: string,
+    experimentId: string,
+    input: Parameters<ExperimentDiagnosisSource["build"]>[2],
+  ): Promise<JsonObject> {
+    this.calls.push({ projectId, experimentId, input });
+    return Promise.resolve(this.bundle);
   }
 }
 

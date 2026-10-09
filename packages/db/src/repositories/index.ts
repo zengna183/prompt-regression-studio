@@ -2,6 +2,7 @@ export * from "./diagnoses.js";
 export * from "./datasets.js";
 export * from "./evaluation-dispatches.js";
 export * from "./evaluations.js";
+export * from "./experiment-diagnoses.js";
 export * from "./experiments.js";
 export * from "./frameworks.js";
 export * from "./projects.js";
@@ -12,6 +13,7 @@ import { createDiagnosisRunRepository } from "./diagnoses.js";
 import { createDatasetRepository } from "./datasets.js";
 import { createEvaluationDispatchRepository } from "./evaluation-dispatches.js";
 import { createEvaluationRepository } from "./evaluations.js";
+import { createExperimentDiagnosisRepository } from "./experiment-diagnoses.js";
 import { createExperimentRepository } from "./experiments.js";
 import { createFrameworkRepository } from "./frameworks.js";
 import { createProjectRepository } from "./projects.js";
@@ -26,6 +28,7 @@ export function createRepositories(db: Database) {
     datasets: createDatasetRepository(db),
     evaluationDispatches: createEvaluationDispatchRepository(db),
     evaluations: createEvaluationRepository(db),
+    experimentDiagnoses: createExperimentDiagnosisRepository(db),
     experiments: createExperimentRepository(db),
   });
 }

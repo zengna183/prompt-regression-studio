@@ -1,12 +1,15 @@
 import type { IncomingMessage } from "node:http";
 
-import type { DiagnosisEngineErrorCode } from "@prompt-regression/diagnosis-engine";
+import { CreateExperimentDiagnosisSchema, UuidSchema } from "@ai-chat-eval/contracts";
+import type { DiagnosisEngineErrorCode, JsonObject } from "@prompt-regression/diagnosis-engine";
 import { DiagnosisEngineError, type DiagnosisEngine } from "@prompt-regression/diagnosis-engine";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { ApiError } from "../errors.js";
 import type { DiagnosisStore } from "../diagnosis-store.js";
+import type { ExperimentDiagnosisSource } from "../experiment-diagnosis.js";
 
 const CanonicalBundleEnvelopeSchema = Type.Object(
   {
@@ -23,6 +26,7 @@ const CanonicalBundleEnvelopeSchema = Type.Object(
 export interface DiagnosisRouteOptions {
   readonly engine: DiagnosisEngine;
   readonly store?: DiagnosisStore;
+  readonly experimentSource?: ExperimentDiagnosisSource;
   readonly maxConcurrentDiagnoses: number;
   readonly rateLimitMax: number;
   readonly rateLimitWindowMs: number;
@@ -41,6 +45,14 @@ const ListDiagnosesQuerySchema = Type.Object(
     status: Type.Optional(DiagnosisStatusSchema),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })),
     offset: Type.Optional(Type.Integer({ minimum: 0, default: 0 })),
+  },
+  { additionalProperties: false },
+);
+
+const ExperimentDiagnosisParamsSchema = Type.Object(
+  {
+    projectId: UuidSchema,
+    experimentId: UuidSchema,
   },
   { additionalProperties: false },
 );
@@ -68,55 +80,41 @@ export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAs
         },
       },
       async (request, reply) => {
-        if (activeDiagnoses >= options.maxConcurrentDiagnoses) {
+        return executeDiagnosis(request, reply, () => Promise.resolve(request.body as JsonObject));
+      },
+    );
+
+    app.post(
+      "/v1/projects/:projectId/experiments/:experimentId/diagnoses",
+      {
+        config: {
+          rateLimit: {
+            max: options.rateLimitMax,
+            timeWindow: options.rateLimitWindowMs,
+          },
+        },
+        schema: {
+          tags: ["diagnoses", "experiments"],
+          summary: "Diagnose a completed candidate directly from saved experiment results",
+          params: ExperimentDiagnosisParamsSchema,
+          body: CreateExperimentDiagnosisSchema,
+        },
+      },
+      async (request, reply) => {
+        if (!options.experimentSource) {
           throw new ApiError(
             503,
-            "DIAGNOSIS_CAPACITY_EXCEEDED",
-            "The diagnosis service is at capacity. Try again later.",
+            "EXPERIMENT_DIAGNOSIS_UNAVAILABLE",
+            "Experiment diagnosis is not configured.",
           );
         }
-
-        activeDiagnoses += 1;
-        const requestAbort = createRequestAbortSignal(request.raw);
-        let persistedRunId: string | undefined;
-        try {
-          if (options.store) {
-            const persisted = await options.store.begin(request.body.bundle_id, request.body);
-            persistedRunId = persisted.id;
-          }
-
-          const report = await options.engine.diagnose(request.body, {
-            signal: requestAbort.signal,
-          });
-          if (options.store && persistedRunId) {
-            await options.store.complete(persistedRunId, report);
-            void reply.header("location", `/v1/diagnoses/${encodeURIComponent(persistedRunId)}`);
-            void reply.header("x-diagnosis-run-id", persistedRunId);
-          }
-          return report;
-        } catch (error) {
-          if (options.store && persistedRunId) {
-            const publicFailure = persistenceFailure(error);
-            try {
-              await options.store.fail(
-                persistedRunId,
-                publicFailure.code,
-                publicFailure.message,
-                publicFailure.cancelled,
-              );
-            } catch (persistenceError) {
-              request.log.error(
-                { err: persistenceError, diagnosisRunId: persistedRunId },
-                "failed to persist diagnosis terminal state",
-              );
-            }
-          }
-          if (error instanceof DiagnosisEngineError) throw mapEngineError(error.code);
-          throw error;
-        } finally {
-          requestAbort.dispose();
-          activeDiagnoses -= 1;
-        }
+        const { projectId, experimentId } = request.params;
+        return executeDiagnosis(
+          request,
+          reply,
+          () => options.experimentSource!.build(projectId, experimentId, request.body),
+          projectId,
+        );
       },
     );
 
@@ -155,6 +153,74 @@ export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAs
     }
     return Promise.resolve();
   };
+
+  async function executeDiagnosis(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    loadBundle: () => Promise<JsonObject>,
+    projectId?: string,
+  ): Promise<JsonObject> {
+    if (activeDiagnoses >= options.maxConcurrentDiagnoses) {
+      void reply.header("retry-after", "1");
+      throw new ApiError(
+        503,
+        "DIAGNOSIS_CAPACITY_EXCEEDED",
+        "The diagnosis service is at capacity. Try again later.",
+      );
+    }
+
+    activeDiagnoses += 1;
+    const requestAbort = createRequestAbortSignal(request.raw);
+    let persistedRunId: string | undefined;
+    try {
+      const bundle = await loadBundle();
+      const bundleId = readBundleId(bundle);
+      if (options.store) {
+        const persisted = await options.store.begin(bundleId, bundle, projectId);
+        persistedRunId = persisted.id;
+      }
+
+      const report = await options.engine.diagnose(bundle, {
+        signal: requestAbort.signal,
+      });
+      if (options.store && persistedRunId) {
+        await options.store.complete(persistedRunId, report);
+        void reply.header("location", `/v1/diagnoses/${encodeURIComponent(persistedRunId)}`);
+        void reply.header("x-diagnosis-run-id", persistedRunId);
+      }
+      return report;
+    } catch (error) {
+      if (options.store && persistedRunId) {
+        const publicFailure = persistenceFailure(error);
+        try {
+          await options.store.fail(
+            persistedRunId,
+            publicFailure.code,
+            publicFailure.message,
+            publicFailure.cancelled,
+          );
+        } catch (persistenceError) {
+          request.log.error(
+            { err: persistenceError, diagnosisRunId: persistedRunId },
+            "failed to persist diagnosis terminal state",
+          );
+        }
+      }
+      if (error instanceof DiagnosisEngineError) throw mapEngineError(error.code);
+      throw error;
+    } finally {
+      requestAbort.dispose();
+      activeDiagnoses -= 1;
+    }
+  }
+}
+
+function readBundleId(bundle: JsonObject): string {
+  const value = bundle.bundle_id;
+  if (typeof value !== "string" || value.length < 1 || value.length > 256 || /\s/u.test(value)) {
+    throw new ApiError(400, "INVALID_DIAGNOSIS_INPUT", "The diagnosis bundle id is invalid.");
+  }
+  return value;
 }
 
 function persistenceFailure(error: unknown): Readonly<{
