@@ -1,4 +1,5 @@
 export * from "./client.js";
+export * from "./ablation.js";
 export * from "./config.js";
 export * from "./errors.js";
 export * from "./repositories/index.js";

@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
+export * from "./ablations.js";
 
 export const UuidSchema = Type.String({ format: "uuid" });
 export const IsoDateSchema = Type.String({ format: "date-time" });

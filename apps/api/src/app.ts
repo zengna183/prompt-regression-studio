@@ -26,6 +26,8 @@ import { diagnosisRoutes } from "./routes/diagnoses.js";
 import { datasetRoutes } from "./routes/datasets.js";
 import { evaluationRoutes } from "./routes/evaluations.js";
 import { experimentRoutes } from "./routes/experiments.js";
+import type { AblationService } from "./ablation-service.js";
+import { ablationRoutes } from "./routes/ablations.js";
 
 export interface BuildAppOptions {
   catalog: CatalogService;
@@ -35,6 +37,7 @@ export interface BuildAppOptions {
   datasetService?: DatasetService;
   evaluationDispatcher?: EvaluationDispatcher;
   experimentService?: ExperimentService;
+  ablationService?: AblationService;
   maxConcurrentDiagnoses: number;
   readiness?: ReadinessCheck;
   webOrigin?: string;
@@ -218,6 +221,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   );
   await app.register(evaluationRoutes(options.evaluationDispatcher));
   await app.register(experimentRoutes(options.experimentService));
+  await app.register(ablationRoutes(options.ablationService));
 
   return app;
 }

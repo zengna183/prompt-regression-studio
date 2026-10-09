@@ -22,6 +22,13 @@
       "when": 1791257559685,
       "tag": "0002_evaluation_dispatch_dead_letter",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791537358152,
+      "tag": "0003_small_machine_man",
+      "breakpoints": true
     }
   ]
 }

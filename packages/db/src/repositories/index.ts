@@ -1,4 +1,5 @@
 export * from "./diagnoses.js";
+export * from "./ablations.js";
 export * from "./datasets.js";
 export * from "./evaluation-dispatches.js";
 export * from "./evaluations.js";
@@ -9,6 +10,7 @@ export * from "./projects.js";
 export * from "./prompts.js";
 
 import type { Database } from "../client.js";
+import { createAblationRepository } from "./ablations.js";
 import { createDiagnosisRunRepository } from "./diagnoses.js";
 import { createDatasetRepository } from "./datasets.js";
 import { createEvaluationDispatchRepository } from "./evaluation-dispatches.js";
@@ -21,6 +23,7 @@ import { createPromptRepository } from "./prompts.js";
 
 export function createRepositories(db: Database) {
   return Object.freeze({
+    ablations: createAblationRepository(db),
     projects: createProjectRepository(db),
     prompts: createPromptRepository(db),
     frameworks: createFrameworkRepository(db),

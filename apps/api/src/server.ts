@@ -18,6 +18,7 @@ import {
   type EvaluationOutboxProcessor,
 } from "./evaluation-outbox-processor.js";
 import { createDatabaseExperimentService } from "./database-experiment-service.js";
+import { createDatabaseAblationService } from "./ablation-service.js";
 
 const config = loadApiConfig();
 const database = createDatabaseClient();
@@ -49,6 +50,7 @@ const app = await buildApp({
   datasetService: createDatabaseDatasetService(database.db),
   evaluationDispatcher,
   experimentService: createDatabaseExperimentService(database.db, evaluationOutboxNotifier),
+  ablationService: createDatabaseAblationService(database.db, evaluationOutboxNotifier),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
   bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
   docsEnabled: config.API_DOCS_ENABLED,

@@ -5,6 +5,11 @@ import { loadDatabaseConfig, type DatabaseConfig } from "./config.js";
 import * as schema from "./schema.js";
 
 export type Database = PostgresJsDatabase<typeof schema>;
+/** Shared query surface for both a pool and a transaction/savepoint. */
+export type RepositoryDatabase = Pick<
+  Database,
+  "select" | "insert" | "update" | "execute" | "transaction"
+>;
 export type PostgresSql = ReturnType<typeof postgres>;
 
 export interface DatabaseClient {

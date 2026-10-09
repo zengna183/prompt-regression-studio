@@ -677,6 +677,36 @@ export const diagnosisRuns = pgTable(
   ],
 );
 
+/** Server-owned lineage for a controlled single-block revert experiment. */
+export const ablationExperiments = pgTable(
+  "ablation_experiments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceExperimentId: uuid("source_experiment_id")
+      .notNull()
+      .references(() => experiments.id, { onDelete: "restrict" }),
+    candidatePromptVersionId: uuid("candidate_prompt_version_id")
+      .notNull()
+      .references(() => promptVersions.id, { onDelete: "restrict" }),
+    revertedBlockId: varchar("reverted_block_id", { length: 80 }).notNull(),
+    experimentId: uuid("experiment_id")
+      .notNull()
+      .references(() => experiments.id, { onDelete: "restrict" }),
+    variantPromptVersionId: uuid("variant_prompt_version_id")
+      .notNull()
+      .references(() => promptVersions.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ablation_source_candidate_block_uq").on(
+      table.sourceExperimentId,
+      table.candidatePromptVersionId,
+      table.revertedBlockId,
+    ),
+    uniqueIndex("ablation_experiment_uq").on(table.experimentId),
+  ],
+);
+
 export const auditEvents = pgTable(
   "audit_events",
   {
@@ -883,3 +913,4 @@ export type Score = InferSelectModel<typeof scores>;
 export type DiagnosisRun = InferSelectModel<typeof diagnosisRuns>;
 export type NewDiagnosisRun = InferInsertModel<typeof diagnosisRuns>;
 export type AuditEvent = InferSelectModel<typeof auditEvents>;
+export type AblationExperiment = InferSelectModel<typeof ablationExperiments>;

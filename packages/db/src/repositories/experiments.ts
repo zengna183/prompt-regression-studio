@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import type { Database } from "../client.js";
+import type { RepositoryDatabase } from "../client.js";
 import { EntityNotFoundError, RepositoryConflictError } from "../errors.js";
 import {
   datasets,
@@ -132,7 +132,7 @@ const MAX_CASE_EXECUTIONS = 5_000;
  * published and belong to the same project, so an experiment cannot silently
  * mix unrelated tests, rubrics, or Prompts.
  */
-export function createExperimentRepository(db: Database): ExperimentRepository {
+export function createExperimentRepository(db: RepositoryDatabase): ExperimentRepository {
   return {
     async create(input) {
       const normalized = normalizeCreateExperiment(input);
