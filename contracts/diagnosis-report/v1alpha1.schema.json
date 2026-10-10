@@ -673,6 +673,17 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 120
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "record_id": { "$ref": "#/$defs/Id" },
+            "source_experiment_id": { "$ref": "#/$defs/Id" },
+            "experiment_id": { "$ref": "#/$defs/Id" },
+            "prompt_version_id": { "$ref": "#/$defs/Id" },
+            "candidate_replay_eval_run": { "$ref": "#/$defs/EvalRun" }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -772,6 +783,10 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 20000
+        },
+        "off_target_harmed_case_ids": {
+          "$ref": "#/$defs/IdSetAllowEmpty",
+          "description": "Non-target cases harmed by the intervention, including other regression clusters."
         }
       },
       "additionalProperties": false

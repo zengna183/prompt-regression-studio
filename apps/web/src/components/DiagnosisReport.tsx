@@ -390,13 +390,21 @@ function EvidenceCard({ evidence, ordinal }: { evidence: Evidence; ordinal: numb
           <small>{evidence.control_sample_size} 个对照用例</small>
         </div>
       </dl>
-      {evidence.unrecovered_hard_targets > 0 || evidence.new_control_failures > 0 ? (
+      {evidence.unrecovered_hard_targets > 0 ||
+      evidence.new_control_failures > 0 ||
+      (evidence.off_target_harmed_case_ids?.length ?? 0) > 0 ? (
         <ul className="evidence-flags" aria-label="消融风险信号">
           {evidence.unrecovered_hard_targets > 0 ? (
             <li>仍有 {evidence.unrecovered_hard_targets} 个硬回归未恢复</li>
           ) : null}
           {evidence.new_control_failures > 0 ? (
             <li>出现 {evidence.new_control_failures} 个新的对照失败</li>
+          ) : null}
+          {(evidence.off_target_harmed_case_ids?.length ?? 0) > 0 ? (
+            <li>
+              回退同时损伤了其他用例：{evidence.off_target_harmed_case_ids?.join("、")}
+              ；不宜直接采用。
+            </li>
           ) : null}
         </ul>
       ) : null}

@@ -22,6 +22,7 @@ from .model import (
     PromptSegment,
     PromptVersion,
     RegressionBundle,
+    RecordedAblation,
     TestCase,
 )
 
@@ -85,6 +86,7 @@ def parse_bundle(raw: Any) -> RegressionBundle:
             "candidate_eval_run",
             "detection",
             "mock_ablation_results_by_segment",
+            "recorded_ablation_runs_by_segment",
         },
         "$",
     )
@@ -131,6 +133,24 @@ def parse_bundle(raw: Any) -> RegressionBundle:
             for index, item in enumerate(result_values)
         )
 
+    recorded_raw = _object(root.get("recorded_ablation_runs_by_segment", {}), "$.recorded_ablation_runs_by_segment")
+    recorded_results: dict[str, RecordedAblation] = {}
+    if len(recorded_raw) > 5:
+        raise BundleValidationError("At most five recorded interventions may be diagnosed together")
+    for segment_id, value in recorded_raw.items():
+        _scalar_id(segment_id, "$.recorded_ablation_runs_by_segment property name")
+        path = f"$.recorded_ablation_runs_by_segment.{segment_id}"
+        item = _object(value, path)
+        _reject_unknown(item, {"id", "source_experiment_id", "experiment_id", "prompt_version", "eval_run", "candidate_replay_eval_run"}, path)
+        recorded_results[segment_id] = RecordedAblation(
+            id=_id(item, "id", path),
+            source_experiment_id=_id(item, "source_experiment_id", path),
+            experiment_id=_id(item, "experiment_id", path),
+            prompt_version=_parse_prompt_version(_object_field(item, "prompt_version", path), f"{path}.prompt_version"),
+            eval_run=_parse_eval_run(_object_field(item, "eval_run", path), f"{path}.eval_run"),
+            candidate_replay_eval_run=_parse_eval_run(_object_field(item, "candidate_replay_eval_run", path), f"{path}.candidate_replay_eval_run"),
+        )
+
     requested_at = _string(root, "diagnosis_requested_at", "$")
     _validate_timestamp(requested_at, "$.diagnosis_requested_at")
 
@@ -147,6 +167,7 @@ def parse_bundle(raw: Any) -> RegressionBundle:
         candidate_eval_run=candidate_run,
         detection=detection,
         mock_ablation_results_by_segment=mock_results,
+        recorded_ablation_runs_by_segment=recorded_results,
     )
     _validate_bundle_invariants(bundle)
     return bundle
@@ -370,10 +391,13 @@ def _parse_detection(raw: Any, path: str) -> DetectionConfig:
             "support_recovery_ratio",
             "reject_recovery_ratio",
             "max_control_damage",
+            "max_replay_drift",
         },
         path,
     )
+    max_replay_drift = _bounded_number({"max_replay_drift": value.get("max_replay_drift", 0.05)}, "max_replay_drift", path, minimum=0.0, maximum=1.0)
     return DetectionConfig(
+        max_replay_drift=max_replay_drift,
         primary_metric=_bounded_string(
             value, "primary_metric", path, maximum=120
         ),
@@ -474,6 +498,47 @@ def _validate_bundle_invariants(bundle: RegressionBundle) -> None:
     known_segment_ids = {
         segment.id for segment in bundle.baseline_prompt_version.segments
     } | {segment.id for segment in bundle.candidate_prompt_version.segments}
+    if bundle.recorded_ablation_runs_by_segment and bundle.mock_ablation_results_by_segment:
+        raise BundleValidationError("Recorded evidence cannot be mixed with mock ablation fixtures")
+    seen_run_ids = {bundle.baseline_eval_run.id, bundle.candidate_eval_run.id}
+    seen_record_ids: set[str] = set()
+    source_ids: set[str] = set()
+    experiment_ids: set[str] = set()
+    for segment_id, record in bundle.recorded_ablation_runs_by_segment.items():
+        if segment_id not in known_segment_ids:
+            raise BundleValidationError("Recorded ablation references an unknown segment")
+        if record.id in seen_record_ids or record.experiment_id in experiment_ids:
+            raise BundleValidationError("Recorded ablation IDs and experiment IDs must be unique")
+        seen_record_ids.add(record.id)
+        experiment_ids.add(record.experiment_id)
+        source_ids.add(record.source_experiment_id)
+        if record.prompt_version.prompt_id != bundle.prompt.id or record.prompt_version.id == bundle.candidate_prompt_version.id:
+            raise BundleValidationError("Recorded variant must be a different version of the same Prompt")
+        from .strategies import _revert_segment, _segment_payload
+        from .errors import PipelineInvariantError
+        try:
+            expected_segments = _revert_segment(bundle.baseline_prompt_version, bundle.candidate_prompt_version, segment_id)
+        except PipelineInvariantError as error:
+            raise BundleValidationError(str(error)) from error
+        if record.prompt_version.content_hash != content_hash([_segment_payload(item) for item in expected_segments]):
+            raise BundleValidationError("Recorded variant content must match the declared single-block revert")
+        original_by_case = bundle.candidate_eval_run.results_by_case()
+        for run, expected_version in ((record.eval_run, record.prompt_version.id), (record.candidate_replay_eval_run, bundle.candidate_prompt_version.id)):
+            if run.id in seen_run_ids:
+                raise BundleValidationError("Recorded runs must be fresh and uniquely identified")
+            seen_run_ids.add(run.id)
+            if run.prompt_version_id != expected_version or run.dataset_id != bundle.dataset.id:
+                raise BundleValidationError("Recorded run Prompt or dataset references do not match")
+            if run.model_snapshot != bundle.candidate_eval_run.model_snapshot or run.evaluator_snapshot != bundle.candidate_eval_run.evaluator_snapshot:
+                raise BundleValidationError("Recorded run snapshots must match the locked source settings")
+            if {result.test_case_id for result in run.results} != expected_case_ids:
+                raise BundleValidationError("Recorded runs must cover the dataset exactly")
+            for result in run.results:
+                _require_metric(result, bundle.detection.primary_metric, "recorded ablation")
+                if {metric.metric_key for metric in result.metrics} != {metric.metric_key for metric in original_by_case[result.test_case_id].metrics}:
+                    raise BundleValidationError("Recorded runs must preserve every source metric")
+    if len(source_ids) > 1 or source_ids & experiment_ids:
+        raise BundleValidationError("Recorded ablations must have one distinct source experiment")
     for segment_id, fixture_results in bundle.mock_ablation_results_by_segment.items():
         if segment_id not in known_segment_ids:
             raise BundleValidationError(

@@ -41,4 +41,19 @@ describe("诊断报告", () => {
     expect(html).toContain("报告状态虽为“支持”，但没有对应的支持性消融证据");
     expect(html).toContain("尚无消融证据，不能称为根因");
   });
+  it("显示回退对其他用例的损伤，即使没有硬失败或对照失败", () => {
+    const report = {
+      ...diagnosisReportFixture,
+      evidence: diagnosisReportFixture.evidence.map((item) => ({
+        ...item,
+        unrecovered_hard_targets: 0,
+        new_control_failures: 0,
+        off_target_harmed_case_ids: ["other-cluster-case"],
+      })),
+    };
+    const html = renderToStaticMarkup(<DiagnosisReportView report={report} />);
+    expect(html).toContain("回退同时损伤了其他用例");
+    expect(html).toContain("other-cluster-case");
+    expect(html).toContain("不宜直接采用");
+  });
 });

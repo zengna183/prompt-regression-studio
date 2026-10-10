@@ -134,6 +134,30 @@ class MarkdownReporter:
                         + " |"
                     )
                 lines.append("")
+                for item in evidence_items:
+                    if item.off_target_harmed_case_ids:
+                        lines.append(
+                            "Other harmed cases: "
+                            + ", ".join(
+                                _code_span(case_id)
+                                for case_id in item.off_target_harmed_case_ids
+                            )
+                        )
+                    run = next(
+                        (run for run in report.ablation_runs if run.id == item.ablation_run_id),
+                        None,
+                    )
+                    if run is not None:
+                        lines.append(
+                            f"Evidence runner: {_code_span(run.runner)}; "
+                            f"evaluation: {_code_span(run.eval_run.id)}."
+                        )
+                        experiment_id = run.provenance.get("experiment_id")
+                        if isinstance(experiment_id, str):
+                            lines.append(
+                                f"Saved intervention experiment: {_code_span(experiment_id)}."
+                            )
+                lines.append("")
 
         lines.extend(("## Recommended next actions", ""))
         if report.recommendations:

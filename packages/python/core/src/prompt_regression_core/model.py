@@ -148,6 +148,7 @@ class DetectionConfig:
     support_recovery_ratio: float = 0.6
     reject_recovery_ratio: float = 0.1
     max_control_damage: float = 0.05
+    max_replay_drift: float = 0.05
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +223,7 @@ class AblationRun:
     eval_run: EvalRun
     runner: str
     runner_version: str
+    provenance: JsonObject = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +247,7 @@ class Evidence:
     unrecovered_hard_targets: int
     new_control_failures: int
     rationale: str
+    off_target_harmed_case_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +279,16 @@ class DiagnosisReport:
 
 
 @dataclass(frozen=True, slots=True)
+class RecordedAblation:
+    id: str
+    source_experiment_id: str
+    experiment_id: str
+    prompt_version: PromptVersion
+    eval_run: EvalRun
+    candidate_replay_eval_run: EvalRun
+
+
+@dataclass(frozen=True, slots=True)
 class RegressionBundle:
     schema_version: str
     bundle_id: str
@@ -289,3 +302,4 @@ class RegressionBundle:
     candidate_eval_run: EvalRun
     detection: DetectionConfig
     mock_ablation_results_by_segment: Mapping[str, tuple[EvalResult, ...]]
+    recorded_ablation_runs_by_segment: Mapping[str, RecordedAblation] = field(default_factory=dict)

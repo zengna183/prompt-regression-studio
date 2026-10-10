@@ -2,7 +2,7 @@
 
 These strategies are intentionally modest: they provide reproducible baselines and
 never claim that text similarity proves causality. A hypothesis becomes supported
-only after the fixture-backed controlled ablation meets explicit thresholds.
+only after recorded or explicit fixture-backed controlled evidence meets thresholds.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from .model import (
 
 
 ENGINE_NAME = "prompt-regression-reference"
-ENGINE_VERSION = "0.1.0a1"
+ENGINE_VERSION = "0.1.0a2"
 
 
 def detect_regression(bundle: RegressionBundle) -> Regression:
@@ -326,7 +326,7 @@ class SingleSegmentRevertStrategy:
     """Create one controlled variant that reverts one changed segment."""
 
     name = "single-segment-revert"
-    version = "1.0.0"
+    version = "2.0.0"
 
     def plan(
         self,
@@ -398,13 +398,26 @@ class SingleSegmentRevertStrategy:
 def _revert_segment(
     baseline: PromptVersion, candidate: PromptVersion, segment_id: str
 ) -> tuple[PromptSegment, ...]:
-    baseline_by_id = {item.id: item for item in baseline.segments}
-    result = {item.id: item for item in candidate.segments}
-    if segment_id in baseline_by_id:
-        result[segment_id] = baseline_by_id[segment_id]
+    before = sorted(baseline.segments, key=lambda item: item.ordinal)
+    after = sorted(candidate.segments, key=lambda item: item.ordinal)
+    old = next((item for item in before if item.id == segment_id), None)
+    new = next((item for item in after if item.id == segment_id), None)
+    if old is None and new is None:
+        raise PipelineInvariantError("Ablation references an unknown segment")
+    common = {item.id for item in before} & {item.id for item in after}
+    if [item.id for item in before if item.id in common] != [item.id for item in after if item.id in common]:
+        raise PipelineInvariantError("Ambiguous reordered segments require a joint ordering ablation")
+    result = list(after)
+    if old is None:
+        result = [item for item in result if item.id != segment_id]
+    elif new is not None:
+        result = [old if item.id == segment_id else item for item in result]
     else:
-        result.pop(segment_id, None)
-    return tuple(sorted(result.values(), key=lambda item: (item.ordinal, item.id)))
+        old_index = next(index for index, item in enumerate(before) if item.id == segment_id)
+        next_id = next((item.id for item in before[old_index + 1:] if any(current.id == item.id for current in after)), None)
+        index = next((index for index, item in enumerate(result) if item.id == next_id), len(result))
+        result.insert(index, old)
+    return tuple(replace(item, ordinal=index) for index, item in enumerate(result))
 
 
 def _segment_payload(segment: PromptSegment) -> Mapping[str, object]:
@@ -471,11 +484,53 @@ class FixtureAblationRunner:
         )
 
 
+class RecordedAblationRunner:
+    """Use recorded evaluations with their real IDs; never relabel them as fixtures."""
+
+    name = "recorded-evaluation-runner"
+    version = "1.0.0"
+
+    def run(
+        self, plan: AblationPlan, variant: AblationVariant, bundle: RegressionBundle
+    ) -> AblationRun:
+        if len(variant.reverted_segment_ids) != 1:
+            raise PipelineInvariantError("Recorded runner requires a single reverted segment")
+        segment_id = variant.reverted_segment_ids[0]
+        record = bundle.recorded_ablation_runs_by_segment.get(segment_id)
+        if record is None:
+            raise MissingAblationFixtureError(f"No recorded ablation exists for segment {segment_id!r}")
+        if record.prompt_version.content_hash != variant.prompt_content_hash:
+            raise PipelineInvariantError("Recorded Prompt content does not match the planned single-block revert")
+        return AblationRun(
+            id=stable_id(
+                "ablationrun",
+                {
+                    "plan_id": plan.id,
+                    "variant_id": variant.id,
+                    "record_id": record.id,
+                    "eval_run_id": record.eval_run.id,
+                },
+            ),
+            plan_id=plan.id,
+            variant_id=variant.id,
+            eval_run=record.eval_run,
+            runner=self.name,
+            runner_version=self.version,
+            provenance={
+                "record_id": record.id,
+                "source_experiment_id": record.source_experiment_id,
+                "experiment_id": record.experiment_id,
+                "prompt_version_id": record.prompt_version.id,
+                "candidate_replay_eval_run": record.candidate_replay_eval_run,
+            },
+        )
+
+
 class ThresholdEvidenceScorer:
     """Evaluate paired target recovery and control damage against declared gates."""
 
     name = "paired-recovery-thresholds"
-    version = "1.0.0"
+    version = "2.0.0"
 
     def score(
         self,
@@ -488,9 +543,47 @@ class ThresholdEvidenceScorer:
     ) -> Evidence:
         del changes
         baseline = bundle.baseline_eval_run.results_by_case()
-        candidate = bundle.candidate_eval_run.results_by_case()
+        original_candidate = bundle.candidate_eval_run.results_by_case()
+        recorded = next(
+            (
+                item for item in bundle.recorded_ablation_runs_by_segment.values()
+                if item.eval_run.id == run.eval_run.id
+            ),
+            None,
+        )
+        candidate = (
+            recorded.candidate_replay_eval_run.results_by_case()
+            if recorded is not None else original_candidate
+        )
         ablation = run.eval_run.results_by_case()
         metric_key = cluster.primary_metric
+        # Cache metric lookups once; inspect every shared dimension, not only the primary.
+        candidate_metrics = {
+            case_id: {metric.metric_key: metric for metric in result.metrics}
+            for case_id, result in candidate.items()
+        }
+        ablation_metrics = {
+            case_id: {metric.metric_key: metric for metric in result.metrics}
+            for case_id, result in ablation.items()
+        }
+        case_damage = {}
+        case_failed = {}
+        for case_id, metrics in candidate_metrics.items():
+            paired_metrics = [
+                (metric, ablation_metrics[case_id][key])
+                for key, metric in metrics.items()
+                if key in ablation_metrics[case_id]
+            ]
+            case_damage[case_id] = max(
+                (max(0.0, before.score - after.score) for before, after in paired_metrics),
+                default=0.0,
+            )
+            case_failed[case_id] = (
+                candidate[case_id].passed and not ablation[case_id].passed
+            ) or any(
+                before.passed is True and after.passed is False
+                for before, after in paired_metrics
+            )
 
         target_deltas = [
             ablation[case_id].metric(metric_key).score
@@ -504,26 +597,26 @@ class ThresholdEvidenceScorer:
         ]
         recoverable = [
             baseline[case_id].metric(metric_key).score
-            - candidate[case_id].metric(metric_key).score
+            - original_candidate[case_id].metric(metric_key).score
             for case_id in plan.target_test_case_ids
         ]
         target_mean_delta = fmean(target_deltas) if target_deltas else 0.0
         control_mean_delta = fmean(control_deltas) if control_deltas else 0.0
         max_observed_control_damage = max(
-            (max(0.0, -delta) for delta in control_deltas),
+            (case_damage[case_id] for case_id in plan.control_test_case_ids),
             default=0.0,
         )
         unrecovered_hard_targets = sum(
             1
             for case_id in plan.target_test_case_ids
             if baseline[case_id].passed
-            and not candidate[case_id].passed
+            and not original_candidate[case_id].passed
             and not ablation[case_id].passed
         )
         new_control_failures = sum(
             1
             for case_id in plan.control_test_case_ids
-            if candidate[case_id].passed and not ablation[case_id].passed
+            if case_failed[case_id]
         )
         recoverable_mean = fmean(recoverable) if recoverable else 0.0
         recovery_ratio: float | None
@@ -535,7 +628,7 @@ class ThresholdEvidenceScorer:
             hard_targets = [
                 case_id
                 for case_id in plan.target_test_case_ids
-                if baseline[case_id].passed and not candidate[case_id].passed
+                if baseline[case_id].passed and not original_candidate[case_id].passed
             ]
             if hard_targets:
                 recovery_ratio = sum(
@@ -547,9 +640,40 @@ class ThresholdEvidenceScorer:
                 method = "no measurable recovery denominator"
 
         config = bundle.detection
+        target_ids = set(plan.target_test_case_ids)
+        off_target_harmed = tuple(sorted(
+            case_id for case_id in candidate
+            if case_id not in target_ids and (
+                case_failed[case_id]
+                or case_damage[case_id] > config.max_control_damage + 1e-12
+            )
+        ))
         enough_targets = len(plan.target_test_case_ids) >= config.min_target_cases
         enough_controls = len(plan.control_test_case_ids) >= config.min_control_cases
-        if (
+        replay_drift = 0.0
+        replay_pass_changes = 0
+        if recorded is not None:
+            replay_drift = max(
+                (
+                    abs(metric.score - candidate_metrics[case_id][metric.metric_key].score)
+                    for case_id, result in original_candidate.items()
+                    for metric in result.metrics
+                ),
+                default=0.0,
+            )
+            replay_pass_changes = sum(
+                result.passed != candidate[case_id].passed or any(
+                    metric.passed is not None
+                    and metric.passed != candidate_metrics[case_id][metric.metric_key].passed
+                    for metric in result.metrics
+                )
+                for case_id, result in original_candidate.items()
+            )
+        if recorded and (replay_drift > config.max_replay_drift + 1e-12 or replay_pass_changes > 0):
+            status = HypothesisStatus.INCONCLUSIVE
+            stance = EvidenceStance.NEUTRAL
+            outcome = "candidate replay was unstable; do not attribute the change to the intervention"
+        elif (
             enough_targets
             and enough_controls
             and recovery_ratio is not None
@@ -557,6 +681,13 @@ class ThresholdEvidenceScorer:
             and max_observed_control_damage <= config.max_control_damage
             and unrecovered_hard_targets == 0
             and new_control_failures == 0
+            and not off_target_harmed
+            and (target_mean_delta > 1e-12 or any(
+                baseline[case_id].passed
+                and not original_candidate[case_id].passed
+                and ablation[case_id].passed
+                for case_id in plan.target_test_case_ids
+            ))
         ):
             status = HypothesisStatus.SUPPORTED
             stance = EvidenceStance.SUPPORTING
@@ -578,6 +709,7 @@ class ThresholdEvidenceScorer:
                 EvidenceStance.CONTRADICTING
                 if max_observed_control_damage > config.max_control_damage
                 or new_control_failures > 0
+                or off_target_harmed
                 else EvidenceStance.NEUTRAL
             )
             outcome = "evidence did not cross a decision gate"
@@ -590,6 +722,8 @@ class ThresholdEvidenceScorer:
             f"max_control_damage={max_observed_control_damage:.6f}; "
             f"unrecovered_hard_targets={unrecovered_hard_targets}; "
             f"new_control_failures={new_control_failures}; "
+            f"replay_max_drift={replay_drift:.6f}; replay_pass_changes={replay_pass_changes}; "
+            f"off_target_harmed_cases={','.join(off_target_harmed) or 'none'}; "
             f"minimums=target:{config.min_target_cases},control:{config.min_control_cases}."
         )
         descriptor = {
@@ -606,6 +740,7 @@ class ThresholdEvidenceScorer:
             "unrecovered_hard_targets": unrecovered_hard_targets,
             "new_control_failures": new_control_failures,
             "status": status.value,
+            "off_target_harmed_case_ids": off_target_harmed,
         }
         return Evidence(
             id=stable_id("evidence", descriptor),
@@ -631,6 +766,7 @@ class ThresholdEvidenceScorer:
             unrecovered_hard_targets=unrecovered_hard_targets,
             new_control_failures=new_control_failures,
             rationale=rationale,
+            off_target_harmed_case_ids=off_target_harmed,
         )
 
 

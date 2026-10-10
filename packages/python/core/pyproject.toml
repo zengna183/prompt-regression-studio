@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prompt-regression-core"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Deterministic core for evidence-backed prompt regression diagnosis"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -62,6 +62,22 @@ describe("诊断报告响应校验", () => {
     });
   });
 
+  it("保留其他失败组损伤信息，并兼容没有新增字段的旧报告", () => {
+    const updated = {
+      ...diagnosisReportFixture,
+      evidence: diagnosisReportFixture.evidence.map((item) => ({
+        ...item,
+        off_target_harmed_case_ids: ["another-regression-case"],
+      })),
+    };
+    expect(parseDiagnosisReport(updated).evidence[0]?.off_target_harmed_case_ids).toEqual([
+      "another-regression-case",
+    ]);
+    expect(
+      parseDiagnosisReport(diagnosisReportFixture).evidence[0]?.off_target_harmed_case_ids,
+    ).toBeUndefined();
+  });
+
   it("拒绝不受支持的报告版本", () => {
     expect(() =>
       parseDiagnosisReport({

@@ -58,6 +58,7 @@ const defaultDetection = Object.freeze({
   supportRecoveryRatio: 0.6,
   rejectRecoveryRatio: 0.1,
   maxControlDamage: 0.05,
+  maxReplayDrift: 0.05,
 });
 
 /** Convert a completed experiment pair into the language-neutral Core contract. */
@@ -171,6 +172,7 @@ export function buildExperimentRegressionBundle(
       support_recovery_ratio: detection.supportRecoveryRatio,
       reject_recovery_ratio: detection.rejectRecoveryRatio,
       max_control_damage: detection.maxControlDamage,
+      max_replay_drift: detection.maxReplayDrift,
     },
     // Real ablation evidence is added only after the controlled worker run exists.
     mock_ablation_results_by_segment: {},
@@ -386,6 +388,7 @@ function normalizeDetection(input: ExperimentDiagnosisDetection | undefined) {
     ["supportRecoveryRatio", result.supportRecoveryRatio],
     ["rejectRecoveryRatio", result.rejectRecoveryRatio],
     ["maxControlDamage", result.maxControlDamage],
+    ["maxReplayDrift", result.maxReplayDrift],
   ] as const) {
     if (!Number.isFinite(value) || value < 0 || value > 1) {
       throw invalidSelection(`${name} must be between 0 and 1.`);

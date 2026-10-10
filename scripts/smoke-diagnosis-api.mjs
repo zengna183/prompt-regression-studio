@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { buildApp } from "../apps/api/dist/app.js";
 import { buildExperimentRegressionBundle } from "../apps/api/dist/experiment-diagnosis.js";
+import { buildRecordedAblationBundle } from "../apps/api/dist/recorded-ablation.js";
+import { revertPromptBlock } from "../packages/db/dist/index.js";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { PythonProcessDiagnosisEngine } from "../packages/diagnosis-engine/dist/index.js";
 import { resolvePythonExecutable } from "./python-executable.mjs";
 
@@ -22,6 +26,25 @@ const executable = resolvePythonExecutable(
 );
 const bundle = JSON.parse(await readFile(fixturePath, "utf8"));
 const experimentFixture = createExperimentFixture(bundle);
+const ablationFixture = createRecordedFixture(experimentFixture, bundle);
+const ajv = new Ajv2020({ allErrors: true, strict: true });
+addFormats(ajv);
+const validateRecordedBundle = ajv.compile(
+  JSON.parse(
+    await readFile(
+      path.join(repositoryRoot, "contracts/regression-bundle/v1alpha1.schema.json"),
+      "utf8",
+    ),
+  ),
+);
+const validateRecordedReport = ajv.compile(
+  JSON.parse(
+    await readFile(
+      path.join(repositoryRoot, "contracts/diagnosis-report/v1alpha1.schema.json"),
+      "utf8",
+    ),
+  ),
+);
 const engine = new PythonProcessDiagnosisEngine({
   executable,
   cwd: repositoryRoot,
@@ -46,7 +69,12 @@ const app = await buildApp({
       ) {
         throw new Error("experiment smoke source received the wrong scope");
       }
-      return Promise.resolve(buildExperimentRegressionBundle(experimentFixture.record, input));
+      const saved = input.includeAblations
+        ? buildRecordedAblationBundle(experimentFixture.record, input, [ablationFixture])
+        : buildExperimentRegressionBundle(experimentFixture.record, input);
+      if (input.includeAblations && !validateRecordedBundle(saved))
+        throw new Error(JSON.stringify(validateRecordedBundle.errors));
+      return Promise.resolve(saved);
     },
   },
   maxConcurrentDiagnoses: 1,
@@ -122,8 +150,97 @@ try {
   process.stdout.write(
     `experiment smoke passed: regressions=${experimentReport.regression.cases.length}, changes=${experimentReport.prompt_changes.length}, verified=${verified.length}\n`,
   );
+  const recordedResponse = await fetch(
+    `http://127.0.0.1:${address.port}/v1/projects/${experimentFixture.record.project.id}/experiments/${experimentFixture.record.experiment.id}/diagnoses`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        candidatePromptVersionId: experimentFixture.candidatePromptVersionId,
+        includeAblations: true,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    },
+  );
+  const recordedBody = await recordedResponse.text();
+  if (!recordedResponse.ok)
+    throw new Error(`recorded evidence smoke returned ${recordedResponse.status}: ${recordedBody}`);
+  const recordedReport = JSON.parse(recordedBody);
+  if (!validateRecordedReport(recordedReport))
+    throw new Error(JSON.stringify(validateRecordedReport.errors));
+  if (
+    recordedReport.hypotheses.filter((item) => item.verification_status === "supported").length !==
+      1 ||
+    recordedReport.ablation_runs[0]?.runner !== "recorded-evaluation-runner" ||
+    recordedReport.ablation_runs[0]?.eval_run.id !==
+      ablationFixture.record.runs[1].evaluationRun.id ||
+    recordedReport.ablation_runs[0]?.provenance.experiment_id !== ablationFixture.link.experimentId
+  ) {
+    throw new Error("recorded evidence smoke did not preserve real run provenance");
+  }
+  process.stdout.write(
+    "recorded evidence smoke passed: supported=1, provenance preserved, schemas valid\n",
+  );
 } finally {
   await app.close();
+}
+
+function createRecordedFixture(source, canonical) {
+  // Explicit offline test records, never selected by production configuration.
+  const record = structuredClone(source.record);
+  const segmentId = Object.keys(canonical.mock_ablation_results_by_segment)[0];
+  const baseline = source.record.promptVersions.find((item) => item.isBaseline);
+  const candidate = source.record.promptVersions.find((item) => !item.isBaseline);
+  const experimentId = "00000000-0000-4000-8000-000000000021";
+  const variantId = "00000000-0000-4000-8000-000000000022";
+  const completedAt = new Date("2026-10-02T00:00:00.000Z");
+  record.experiment.id = experimentId;
+  record.promptVersions = structuredClone([
+    { ...candidate, isBaseline: true },
+    {
+      ...candidate,
+      isBaseline: false,
+      version: {
+        ...candidate.version,
+        id: variantId,
+        version: 3,
+        blocks: revertPromptBlock(baseline.version.blocks, candidate.version.blocks, segmentId),
+      },
+    },
+  ]);
+  record.runs = [
+    runPair("replay-generation", "replay-evaluation", candidate.version.id, completedAt),
+    runPair("reverted-generation", "reverted-evaluation", variantId, completedAt),
+  ];
+  const outputs = (results, prefix, generationRunId) =>
+    results.map((result, index) => ({
+      id: `${prefix}-${index}`,
+      generationRunId,
+      caseId: result.test_case_id,
+      status: "succeeded",
+      outputText: result.output_text,
+    }));
+  const replayResults = canonical.candidate_eval_run.results;
+  const variantResults = canonical.mock_ablation_results_by_segment[segmentId];
+  const replayOutputs = outputs(replayResults, "replay-output", "replay-generation");
+  const variantOutputs = outputs(variantResults, "variant-output", "reverted-generation");
+  record.outputs = [...replayOutputs, ...variantOutputs];
+  record.scores = [
+    ...scoreRows(replayResults, replayOutputs, "replay-evaluation"),
+    ...scoreRows(variantResults, variantOutputs, "reverted-evaluation"),
+  ];
+  return {
+    record,
+    link: {
+      id: "00000000-0000-4000-8000-000000000020",
+      sourceExperimentId: source.record.experiment.id,
+      candidatePromptVersionId: candidate.version.id,
+      revertedBlockId: segmentId,
+      experimentId,
+      variantPromptVersionId: variantId,
+      createdAt: completedAt,
+    },
+  };
 }
 
 function createExperimentFixture(canonical) {

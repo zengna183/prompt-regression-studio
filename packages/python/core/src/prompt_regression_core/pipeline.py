@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 import math
 from typing import Sequence
 
@@ -34,6 +35,9 @@ from .strategies import (
     ENGINE_NAME,
     ENGINE_VERSION,
     FixtureAblationRunner,
+    RecordedAblationRunner,
+    _revert_segment,
+    _segment_payload,
     MetadataFailureClusterer,
     RuleBasedRootCauseStrategy,
     SingleSegmentRevertStrategy,
@@ -65,11 +69,17 @@ class DiagnosisPipeline:
         self._root_cause_strategy = root_cause_strategy or RuleBasedRootCauseStrategy()
         self._ablation_strategy = ablation_strategy or SingleSegmentRevertStrategy()
         self._ablation_runner = ablation_runner or FixtureAblationRunner()
+        self._default_runner = ablation_runner is None
         self._evidence_scorer = evidence_scorer or ThresholdEvidenceScorer()
 
     def run(self, bundle: RegressionBundle) -> DiagnosisReport:
         """Produce a deterministic diagnosis report for one paired comparison."""
 
+        runner = (
+            RecordedAblationRunner()
+            if self._default_runner and bundle.recorded_ablation_runs_by_segment
+            else self._ablation_runner
+        )
         regression = detect_regression(bundle)
         changes = tuple(
             sorted(
@@ -122,7 +132,7 @@ class DiagnosisPipeline:
             hypothesis_evidence: list[Evidence] = []
             for variant in planned_variants:
                 try:
-                    run = self._ablation_runner.run(plan, variant, bundle)
+                    run = runner.run(plan, variant, bundle)
                 except MissingAblationFixtureError:
                     missing_fixtures.append((hypothesis, variant))
                     continue
@@ -151,7 +161,7 @@ class DiagnosisPipeline:
             "failure_clusterer": _component_descriptor(self._failure_clusterer),
             "root_cause_strategy": _component_descriptor(self._root_cause_strategy),
             "ablation_strategy": _component_descriptor(self._ablation_strategy),
-            "ablation_runner": _component_descriptor(self._ablation_runner),
+            "ablation_runner": _component_descriptor(runner),
             "evidence_scorer": _component_descriptor(self._evidence_scorer),
             "detection": bundle.detection,
         }
@@ -166,6 +176,11 @@ class DiagnosisPipeline:
             hypotheses=tuple(final_hypotheses),
             missing_fixtures=missing_fixtures,
         )
+        if bundle.recorded_ablation_runs_by_segment:
+            recommendations += (
+                "Recorded evidence is scoped to these cases and one paired repetition; "
+                "run additional repetitions before generalizing or deploying a fix.",
+            )
         input_bundle_hash = content_hash(bundle)
         report_payload = {
             "schema_version": REPORT_SCHEMA_VERSION,
@@ -387,7 +402,14 @@ def _validate_run(
 ) -> None:
     if run.plan_id != plan.id or run.variant_id != variant.id:
         raise PipelineInvariantError("Ablation run references the wrong plan or variant")
-    if run.eval_run.prompt_version_id != variant.id:
+    record = (
+        bundle.recorded_ablation_runs_by_segment.get(variant.reverted_segment_ids[0])
+        if run.runner == RecordedAblationRunner.name else None
+    )
+    if record is not None and run.eval_run != record.eval_run:
+        raise PipelineInvariantError("Recorded runner must preserve the stored evaluation")
+    expected_version_id = record.prompt_version.id if record is not None else variant.id
+    if run.eval_run.prompt_version_id != expected_version_id:
         raise PipelineInvariantError(
             "Ablation eval run must reference the executed variant"
         )
@@ -472,6 +494,14 @@ def _validate_evidence(
         raise PipelineInvariantError("Evidence target cases do not match the plan")
     if set(evidence.control_case_ids) != set(plan.control_test_case_ids):
         raise PipelineInvariantError("Evidence control cases do not match the plan")
+    _require_unique_string_values(
+        evidence.off_target_harmed_case_ids, "off-target harmed cases", allow_empty=True
+    )
+    non_target_ids = {
+        item.test_case_id for item in run.eval_run.results
+    } - set(plan.target_test_case_ids)
+    if not set(evidence.off_target_harmed_case_ids) <= non_target_ids:
+        raise PipelineInvariantError("Off-target harm references unknown or target cases")
     if evidence.target_sample_size != len(evidence.target_case_ids):
         raise PipelineInvariantError("Evidence target sample size is inconsistent")
     if evidence.control_sample_size != len(evidence.control_case_ids):
@@ -560,42 +590,13 @@ def _reverted_prompt_hash(
 ) -> str:
     """Reconstruct the declared intervention and reject ambiguous ordering."""
 
-    baseline_by_id = {
-        item.id: item for item in bundle.baseline_prompt_version.segments
-    }
-    segments_by_id = {
-        item.id: item for item in bundle.candidate_prompt_version.segments
-    }
+    current = bundle.candidate_prompt_version
     for segment_id in reverted_segment_ids:
-        if segment_id in baseline_by_id:
-            segments_by_id[segment_id] = baseline_by_id[segment_id]
-        elif segment_id in segments_by_id:
-            del segments_by_id[segment_id]
-        else:
-            raise PipelineInvariantError(
-                f"Ablation references unknown segment {segment_id!r}"
-            )
-    ordered = tuple(
-        sorted(segments_by_id.values(), key=lambda item: (item.ordinal, item.id))
-    )
-    ordinals = [item.ordinal for item in ordered]
-    if len(ordinals) != len(set(ordinals)):
-        raise PipelineInvariantError(
-            "A single-segment intervention creates ambiguous prompt ordering; "
-            "plan a joint ordering ablation instead"
+        current = replace(
+            current,
+            segments=_revert_segment(bundle.baseline_prompt_version, current, segment_id),
         )
-    return content_hash(
-        [
-            {
-                "id": item.id,
-                "kind": item.kind,
-                "content": item.content,
-                "ordinal": item.ordinal,
-                "semantic_tags": list(item.semantic_tags),
-            }
-            for item in ordered
-        ]
-    )
+    return content_hash([_segment_payload(item) for item in current.segments])
 
 
 def _require_unique_ids(values: Sequence[object], label: str) -> None:

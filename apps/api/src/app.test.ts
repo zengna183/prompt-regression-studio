@@ -562,6 +562,23 @@ describe("API", () => {
     await app.close();
   });
 
+  it("refuses uploaded evidence claiming to be a saved experiment run", async () => {
+    const engine = new RecordingDiagnosisEngine();
+    const app = await buildTestApp(new TestCatalog(), engine);
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/diagnoses",
+        payload: { ...canonicalBundle, recorded_ablation_runs_by_segment: {} },
+      });
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ code: "RECORDED_EVIDENCE_REQUIRES_EXPERIMENT" });
+      expect(engine.callCount).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("runs diagnosis for a canonical bundle and forwards an AbortSignal", async () => {
     const engine = new RecordingDiagnosisEngine();
     const app = await buildTestApp(new TestCatalog(), engine);

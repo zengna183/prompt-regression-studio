@@ -80,6 +80,13 @@ export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAs
         },
       },
       async (request, reply) => {
+        if ((request.body as JsonObject).recorded_ablation_runs_by_segment !== undefined) {
+          throw new ApiError(
+            422,
+            "RECORDED_EVIDENCE_REQUIRES_EXPERIMENT",
+            "Load recorded evidence from the project experiment diagnosis endpoint; uploaded recorded evidence is not trusted.",
+          );
+        }
         return executeDiagnosis(request, reply, () => Promise.resolve(request.body as JsonObject));
       },
     );

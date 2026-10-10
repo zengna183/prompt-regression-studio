@@ -88,6 +88,7 @@ export interface Evidence {
   unrecovered_hard_targets: number;
   new_control_failures: number;
   rationale: string;
+  off_target_harmed_case_ids?: readonly string[];
 }
 
 export interface DiagnosisReport {

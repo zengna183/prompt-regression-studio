@@ -375,6 +375,7 @@ export const ExperimentDiagnosisDetectionSchema = Type.Object(
     supportRecoveryRatio: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     rejectRecoveryRatio: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     maxControlDamage: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    maxReplayDrift: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
   },
   { additionalProperties: false },
 );
@@ -384,6 +385,7 @@ export const CreateExperimentDiagnosisSchema = Type.Object(
   {
     candidatePromptVersionId: UuidSchema,
     repetition: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    includeAblations: Type.Optional(Type.Boolean()),
     detection: Type.Optional(ExperimentDiagnosisDetectionSchema),
   },
   { additionalProperties: false },

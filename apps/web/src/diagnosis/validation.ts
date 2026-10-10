@@ -295,6 +295,14 @@ function parseEvidence(value: unknown, path: string): Evidence {
     ),
     new_control_failures: integer(item.new_control_failures, `${path}.new_control_failures`),
     rationale: text(item.rationale, `${path}.rationale`),
+    ...(item.off_target_harmed_case_ids === undefined
+      ? {}
+      : {
+          off_target_harmed_case_ids: stringArray(
+            item.off_target_harmed_case_ids,
+            `${path}.off_target_harmed_case_ids`,
+          ),
+        }),
   };
 }
 
