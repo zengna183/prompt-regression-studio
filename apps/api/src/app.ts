@@ -24,6 +24,7 @@ import { ApiError } from "./errors.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { diagnosisRoutes } from "./routes/diagnoses.js";
 import { datasetRoutes } from "./routes/datasets.js";
+import type { DatasetCaseGenerator } from "./dataset-generation.js";
 import { evaluationRoutes } from "./routes/evaluations.js";
 import { experimentRoutes } from "./routes/experiments.js";
 import type { AblationService } from "./ablation-service.js";
@@ -35,6 +36,7 @@ export interface BuildAppOptions {
   diagnosisStore?: DiagnosisStore;
   experimentDiagnosisSource?: ExperimentDiagnosisSource;
   datasetService?: DatasetService;
+  datasetCaseGenerator?: DatasetCaseGenerator;
   evaluationDispatcher?: EvaluationDispatcher;
   experimentService?: ExperimentService;
   ablationService?: AblationService;
@@ -206,7 +208,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   );
 
   await app.register(catalogRoutes(options.catalog));
-  await app.register(datasetRoutes(options.datasetService));
+  await app.register(datasetRoutes(options.datasetService, options.datasetCaseGenerator));
   await app.register(
     diagnosisRoutes({
       engine: options.diagnosisEngine,

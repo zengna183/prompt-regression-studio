@@ -273,6 +273,12 @@ export function createDatasetRepository(db: RepositoryDatabase): DatasetReposito
             `Cannot publish a dataset version in ${existing.status} state`,
           );
         }
+        if (existing.source !== "manual") {
+          throw new RepositoryConflictError(
+            "DATASET_REVIEW_REQUIRED",
+            "Imported and AI-generated dataset versions require human review before publishing",
+          );
+        }
         if (existing.caseCount < 1) {
           throw new RepositoryConflictError(
             "DATASET_VERSION_EMPTY",

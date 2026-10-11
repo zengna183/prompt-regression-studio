@@ -8,6 +8,8 @@ import type {
   DatasetImportPreviewRequest,
   DatasetImportRequest,
   DatasetImportPreview,
+  GenerateDatasetCasesRequest,
+  EvaluationCase,
   Project,
   Prompt,
   PromptVersion,
@@ -160,6 +162,15 @@ export function getDiagnosisErrorMessage(error: unknown): string {
 }
 
 export const api = {
+  async datasetGenerationAvailability(signal?: AbortSignal): Promise<{ enabled: boolean }> {
+    const payload = await request(
+      "/v1/datasets/generation-availability",
+      signal ? { signal } : undefined,
+    );
+    if (!isRecord(payload) || typeof payload.enabled !== "boolean")
+      throw new ApiError("服务端返回的生成配置不正确", 502, "INVALID_RESPONSE");
+    return { enabled: payload.enabled };
+  },
   async listDatasets(projectId: string, signal?: AbortSignal): Promise<Dataset[]> {
     return unwrapList<Dataset>(
       await request(
@@ -208,6 +219,22 @@ export const api = {
         body: JSON.stringify(input),
         ...(signal ? { signal } : {}),
       }),
+    );
+  },
+  async generateDatasetCases(
+    datasetId: string,
+    input: GenerateDatasetCasesRequest,
+  ): Promise<DatasetVersion> {
+    return unwrapEntity<DatasetVersion>(
+      await request(`/v1/datasets/${encodeURIComponent(datasetId)}/generate`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
+  },
+  async listDatasetCases(versionId: string): Promise<EvaluationCase[]> {
+    return unwrapList<EvaluationCase>(
+      await request(`/v1/dataset-versions/${encodeURIComponent(versionId)}/cases`),
     );
   },
   async diagnose(

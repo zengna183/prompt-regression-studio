@@ -296,6 +296,15 @@ export const DatasetImportPreviewSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const GenerateDatasetCasesRequestSchema = Type.Object(
+  {
+    brief: Type.String({ minLength: 10, maxLength: 2000 }),
+    count: Type.Integer({ minimum: 1, maximum: 10 }),
+    parentVersionId: Type.Optional(UuidSchema),
+  },
+  { additionalProperties: false },
+);
+
 export const DatasetVersionSchema = Type.Object(
   {
     id: UuidSchema,
@@ -575,6 +584,7 @@ export type DatasetImportFormat = Static<typeof DatasetImportFormatSchema>;
 export type DatasetImportPreviewRequest = Static<typeof DatasetImportPreviewRequestSchema>;
 export type DatasetImportRequest = Static<typeof DatasetImportRequestSchema>;
 export type DatasetImportPreview = Static<typeof DatasetImportPreviewSchema>;
+export type GenerateDatasetCasesRequest = Static<typeof GenerateDatasetCasesRequestSchema>;
 export type DatasetVersion = Static<typeof DatasetVersionSchema>;
 export type EvaluationCase = Static<typeof EvaluationCaseSchema>;
 export type ExperimentPromptVersion = Static<typeof ExperimentPromptVersionSchema>;

@@ -6,6 +6,7 @@ import {
   DatasetImportPreviewRequestSchema,
   DatasetImportRequestSchema,
   DatasetImportPreviewSchema,
+  GenerateDatasetCasesRequestSchema,
   EvaluationCaseSchema,
   UuidSchema,
 } from "@ai-chat-eval/contracts";
@@ -13,6 +14,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 
 import type { DatasetService } from "../dataset-service.js";
+import type { DatasetCaseGenerator } from "../dataset-generation.js";
 import { ApiError } from "../errors.js";
 import { DATASET_IMPORT_VERSION, parseDatasetImport } from "../dataset-import.js";
 
@@ -20,7 +22,10 @@ const ProjectParams = Type.Object({ projectId: UuidSchema }, { additionalPropert
 const DatasetParams = Type.Object({ datasetId: UuidSchema }, { additionalProperties: false });
 const VersionParams = Type.Object({ versionId: UuidSchema }, { additionalProperties: false });
 
-export function datasetRoutes(service: DatasetService | undefined): FastifyPluginAsyncTypebox {
+export function datasetRoutes(
+  service: DatasetService | undefined,
+  generator?: DatasetCaseGenerator,
+): FastifyPluginAsyncTypebox {
   return (app) => {
     function requireService(): DatasetService {
       if (!service) {
@@ -28,6 +33,19 @@ export function datasetRoutes(service: DatasetService | undefined): FastifyPlugi
       }
       return service;
     }
+
+    app.get(
+      "/v1/datasets/generation-availability",
+      {
+        schema: {
+          tags: ["datasets"],
+          response: {
+            200: Type.Object({ enabled: Type.Boolean() }, { additionalProperties: false }),
+          },
+        },
+      },
+      () => ({ enabled: Boolean(service && generator) }),
+    );
 
     app.get(
       "/v1/projects/:projectId/datasets",
@@ -78,10 +96,20 @@ export function datasetRoutes(service: DatasetService | undefined): FastifyPlugi
           response: { 201: DatasetVersionSchema },
         },
       },
-      async (request, reply) =>
-        reply
+      async (request, reply) => {
+        if (
+          (request.body.source !== undefined && request.body.source !== "manual") ||
+          request.body.generationProvenance !== undefined
+        )
+          throw new ApiError(
+            400,
+            "DATASET_SOURCE_RESERVED",
+            "导入或 AI 来源只能由平台生成并记录。",
+          );
+        return reply
           .code(201)
-          .send(await requireService().createVersion(request.params.datasetId, request.body)),
+          .send(await requireService().createVersion(request.params.datasetId, request.body));
+      },
     );
 
     app.get(
@@ -155,6 +183,33 @@ export function datasetRoutes(service: DatasetService | undefined): FastifyPlugi
           changeSummary: `导入 ${cases.length} 条 ${request.body.format.toUpperCase()} 用例（待审核草稿）`,
         });
         return reply.code(201).send(version);
+      },
+    );
+
+    app.post(
+      "/v1/datasets/:datasetId/generate",
+      {
+        config: { rateLimit: { max: 3, timeWindow: 60_000 } },
+        schema: {
+          tags: ["datasets"],
+          params: DatasetParams,
+          body: GenerateDatasetCasesRequestSchema,
+          response: { 201: DatasetVersionSchema },
+        },
+      },
+      async (request, reply) => {
+        const datasetService = requireService();
+        if (!generator)
+          throw new ApiError(
+            503,
+            "DATASET_GENERATION_UNAVAILABLE",
+            "AI 用例生成尚未配置，请联系管理员设置生成模型。",
+          );
+        await datasetService.listVersions(request.params.datasetId);
+        const versionInput = await generator.generate(request.body);
+        return reply
+          .code(201)
+          .send(await datasetService.createVersion(request.params.datasetId, versionInput));
       },
     );
 

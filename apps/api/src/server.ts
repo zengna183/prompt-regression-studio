@@ -5,6 +5,7 @@ import {
 } from "@ai-chat-eval/db";
 import { createEvaluationQueue } from "@ai-chat-eval/queue";
 import { PythonProcessDiagnosisEngine } from "@prompt-regression/diagnosis-engine";
+import { OpenAICompatibleClient } from "@prompt-regression/model-provider";
 
 import { buildApp } from "./app.js";
 import { loadApiConfig } from "./config.js";
@@ -19,8 +20,23 @@ import {
 } from "./evaluation-outbox-processor.js";
 import { createDatabaseExperimentService } from "./database-experiment-service.js";
 import { createDatabaseAblationService } from "./ablation-service.js";
+import { createDatasetCaseGenerator } from "./dataset-generation.js";
 
 const config = loadApiConfig();
+const datasetGenerationModel = config.DATASET_GENERATION_MODEL;
+const datasetCaseGenerator = datasetGenerationModel
+  ? createDatasetCaseGenerator(
+      new OpenAICompatibleClient({
+        baseUrl: process.env.MODEL_PROVIDER_BASE_URL?.trim() || "http://127.0.0.1:11434",
+        apiKey: config.MODEL_PROVIDER_API_KEY || "local-development-key",
+        production: config.NODE_ENV === "production",
+        allowPrivateNetwork:
+          config.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK ?? config.NODE_ENV !== "production",
+        timeoutMs: config.MODEL_PROVIDER_TIMEOUT_MS,
+      }),
+      datasetGenerationModel,
+    )
+  : undefined;
 const database = createDatabaseClient();
 const evaluationQueue = createEvaluationQueue(config.REDIS_URL);
 const evaluationDispatcher = createDatabaseEvaluationDispatcher(
@@ -48,6 +64,7 @@ const app = await buildApp({
   diagnosisStore: createDatabaseDiagnosisStore(database.db),
   experimentDiagnosisSource: createDatabaseExperimentDiagnosisSource(database.db),
   datasetService: createDatabaseDatasetService(database.db),
+  ...(datasetCaseGenerator ? { datasetCaseGenerator } : {}),
   evaluationDispatcher,
   experimentService: createDatabaseExperimentService(database.db, evaluationOutboxNotifier),
   ablationService: createDatabaseAblationService(database.db, evaluationOutboxNotifier),

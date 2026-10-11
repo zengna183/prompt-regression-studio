@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
 import { createDatabaseDatasetService } from "./database-dataset-service.js";
+import { createDatasetCaseGenerator } from "./dataset-generation.js";
 
 function objectResponse(response: { json(): unknown }): Record<string, unknown> {
   const value = response.json();
@@ -50,6 +51,28 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("dataset import PostgreSQL workf
           catalog: {} as CatalogService,
           diagnosisEngine: {} as DiagnosisEngine,
           datasetService: service,
+          datasetCaseGenerator: createDatasetCaseGenerator(
+            {
+              complete: () =>
+                Promise.resolve({
+                  provider: "openai-compatible" as const,
+                  model: "fixture-model",
+                  text: JSON.stringify({
+                    cases: [
+                      {
+                        name: "超期退款",
+                        input: "已经超期，还能退款吗？",
+                        expectedOutput: "核实政策后回答，不要擅自承诺",
+                      },
+                    ],
+                  }),
+                  usage: { inputTokens: 30, outputTokens: 20, totalTokens: 50 },
+                  providerRequestId: "fixture-request",
+                  rawResponse: null,
+                }),
+            },
+            "fixture-model",
+          ),
           maxConcurrentDiagnoses: 1,
         });
         try {
@@ -102,6 +125,37 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("dataset import PostgreSQL workf
           });
           expect(invalid.statusCode).toBe(422);
           expect(await service.listVersions(dataset.id)).toHaveLength(1);
+          const blockedImport = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${version.id}/publish`,
+          });
+          expect(blockedImport.statusCode).toBe(409);
+          expect(blockedImport.json()).toMatchObject({ code: "DATASET_REVIEW_REQUIRED" });
+          const generated = await app.inject({
+            method: "POST",
+            url: `/v1/datasets/${dataset.id}/generate`,
+            payload: { brief: "测试客服对超期退款申请的回答质量", count: 1 },
+          });
+          expect(generated.statusCode).toBe(201);
+          const aiVersion = objectResponse(generated);
+          expect(aiVersion).toMatchObject({
+            status: "draft",
+            source: "ai_generated",
+            caseCount: 1,
+            generationProvenance: {
+              model: "fixture-model",
+              brief: "测试客服对超期退款申请的回答质量",
+              providerRequestId: "fixture-request",
+            },
+          });
+          if (typeof aiVersion.id !== "string") throw new Error("Missing AI version ID");
+          expect((await service.listCases(aiVersion.id))[0]?.input).toBe("已经超期，还能退款吗？");
+          const blockedAi = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${aiVersion.id}/publish`,
+          });
+          expect(blockedAi.statusCode).toBe(409);
+          expect(blockedAi.json()).toMatchObject({ code: "DATASET_REVIEW_REQUIRED" });
         } finally {
           await app.close();
         }

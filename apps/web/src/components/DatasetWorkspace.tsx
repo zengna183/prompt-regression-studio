@@ -3,6 +3,7 @@ import type { Dataset, DatasetVersion, Project } from "@ai-chat-eval/contracts";
 
 import { api, getErrorMessage } from "../api/client";
 import { DatasetImport } from "./DatasetImport";
+import { DatasetGeneration } from "./DatasetGeneration";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
 
 export function DatasetWorkspace({ project }: { project: Project }) {
@@ -57,8 +58,8 @@ export function DatasetWorkspace({ project }: { project: Project }) {
       <header className="workspace-header">
         <div>
           <div className="breadcrumb">{project.name} / 评测集</div>
-          <h1>评测集导入</h1>
-          <p>导入自己的对话样本，保留不可变版本和数据来源。</p>
+          <h1>评测集</h1>
+          <p>导入对话样本，或让 AI 建议候选用例；每次保存都保留独立版本和来源。</p>
         </div>
       </header>
       {loading ? <LoadingState label="正在加载评测集" /> : null}
@@ -161,6 +162,13 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
           setReload((value) => value + 1);
         }}
       />
+      <DatasetGeneration
+        datasetId={datasetId}
+        onSaved={(version) => {
+          setVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
+          setReload((value) => value + 1);
+        }}
+      />
       <section className="dataset-versions">
         <h2>已保存的版本</h2>
         {loading ? (
@@ -180,6 +188,13 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
                     ? "已发布"
                     : "已归档"}{" "}
                 · {version.caseCount} 条 · {version.changeSummary ?? "无变更说明"}
+                {version.source === "ai_generated" &&
+                typeof version.generationProvenance === "object" &&
+                version.generationProvenance !== null &&
+                "model" in version.generationProvenance &&
+                typeof version.generationProvenance.model === "string"
+                  ? ` · 模型：${version.generationProvenance.model}`
+                  : null}
               </li>
             ))}
           </ul>

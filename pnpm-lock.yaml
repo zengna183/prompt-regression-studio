@@ -77,6 +77,9 @@ importers:
       '@prompt-regression/diagnosis-engine':
         specifier: workspace:*
         version: link:../../packages/diagnosis-engine
+      '@prompt-regression/model-provider':
+        specifier: workspace:*
+        version: link:../../packages/model-provider
       '@sinclair/typebox':
         specifier: 0.34.52
         version: 0.34.52

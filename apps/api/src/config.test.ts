@@ -16,6 +16,7 @@ describe("loadApiConfig", () => {
     expect(config.API_RATE_LIMIT_MAX).toBe(120);
     expect(config.DIAGNOSIS_RATE_LIMIT_MAX).toBe(10);
     expect(config.API_TRUST_PROXY).toBe(false);
+    expect(config.DATASET_GENERATION_MODEL).toBeUndefined();
   });
 
   it("requires a strong API token and hides API docs in production", () => {
@@ -90,5 +91,31 @@ describe("loadApiConfig", () => {
       DIAGNOSIS_TIMEOUT_MS: 45_000,
       DIAGNOSIS_MAX_CONCURRENCY: 4,
     });
+  });
+
+  it("validates optional AI case-generation deployment settings", () => {
+    expect(loadApiConfig({ DATASET_GENERATION_MODEL: "small-model" })).toMatchObject({
+      DATASET_GENERATION_MODEL: "small-model",
+      MODEL_PROVIDER_TIMEOUT_MS: 60_000,
+    });
+    expect(() => loadApiConfig({ MODEL_PROVIDER_TIMEOUT_MS: "0" })).toThrow();
+    expect(() => loadApiConfig({ MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK: "yes" })).toThrow();
+    expect(() =>
+      loadApiConfig({
+        NODE_ENV: "production",
+        API_AUTH_TOKEN: "a".repeat(32),
+        WEB_ORIGIN: "https://eval.example.com",
+        DATASET_GENERATION_MODEL: "model",
+      }),
+    ).toThrow(/MODEL_PROVIDER_API_KEY/u);
+    expect(
+      loadApiConfig({
+        NODE_ENV: "production",
+        API_AUTH_TOKEN: "a".repeat(32),
+        WEB_ORIGIN: "https://eval.example.com",
+        DATASET_GENERATION_MODEL: "model",
+        MODEL_PROVIDER_API_KEY: "real-key",
+      }).DATASET_GENERATION_MODEL,
+    ).toBe("model");
   });
 });

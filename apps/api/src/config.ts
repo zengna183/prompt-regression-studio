@@ -69,6 +69,16 @@ const RawConfigSchema = z
     DIAGNOSIS_PYTHONPATH: z.string().min(1).optional(),
     DIAGNOSIS_TIMEOUT_MS: z.coerce.number().int().min(1).max(2_147_483_647).default(120_000),
     DIAGNOSIS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(128).default(2),
+    DATASET_GENERATION_MODEL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(1).max(240).optional(),
+    ),
+    MODEL_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
+    MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK: optionalBoolean,
+    MODEL_PROVIDER_API_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(1).max(4096).optional(),
+    ),
   })
   .superRefine((config, context) => {
     if (config.NODE_ENV === "production" && config.API_AUTH_TOKEN === undefined) {
@@ -90,6 +100,17 @@ const RawConfigSchema = z
         code: "custom",
         path: ["WEB_ORIGIN"],
         message: "WEB_ORIGIN must use https:// in production",
+      });
+    }
+    if (
+      config.NODE_ENV === "production" &&
+      config.DATASET_GENERATION_MODEL &&
+      (!config.MODEL_PROVIDER_API_KEY || config.MODEL_PROVIDER_API_KEY === "local-development-key")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["MODEL_PROVIDER_API_KEY"],
+        message: "MODEL_PROVIDER_API_KEY is required for dataset generation in production",
       });
     }
   });
