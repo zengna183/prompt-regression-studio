@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 
-import type { Database } from "../client.js";
+import type { RepositoryDatabase } from "../client.js";
 import {
   EntityNotFoundError,
   InvalidVersionStateError,
@@ -79,7 +79,7 @@ export interface DatasetRepository {
 const caseKeyPattern = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,119})$/u;
 const datasetSources = new Set<DatasetSource>(["manual", "ai_generated", "imported", "mixed"]);
 
-export function createDatasetRepository(db: Database): DatasetRepository {
+export function createDatasetRepository(db: RepositoryDatabase): DatasetRepository {
   return {
     async create(input) {
       try {

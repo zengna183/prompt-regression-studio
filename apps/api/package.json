@@ -24,6 +24,7 @@
     "@fastify/type-provider-typebox": "6.1.0",
     "@prompt-regression/diagnosis-engine": "workspace:*",
     "@sinclair/typebox": "0.34.52",
+    "csv-parse": "7.0.3",
     "fastify": "5.12.4",
     "zod": "4.6.2"
   }

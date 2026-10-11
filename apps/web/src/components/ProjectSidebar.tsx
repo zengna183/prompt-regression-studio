@@ -50,6 +50,20 @@ export function ProjectSidebar({
       <nav className="primary-nav" aria-label="主要功能">
         <button
           className={
+            "primary-nav__item" + (activeView === "datasets" ? " primary-nav__item--active" : "")
+          }
+          type="button"
+          onClick={() => onNavigate("datasets")}
+          {...(activeView === "datasets" ? { "aria-current": "page" as const } : {})}
+        >
+          <span aria-hidden="true">S</span>
+          <span>
+            <strong>评测集</strong>
+            <small>导入、校验与草稿预览</small>
+          </span>
+        </button>
+        <button
+          className={
             "primary-nav__item" + (activeView === "catalog" ? " primary-nav__item--active" : "")
           }
           type="button"
@@ -118,7 +132,7 @@ export function ProjectSidebar({
         ) : null}
         {!loading && !error
           ? projects.map((project) => {
-              const selected = activeView === "catalog" && project.id === selectedProjectId;
+              const selected = activeView !== "diagnosis" && project.id === selectedProjectId;
               return (
                 <button
                   key={project.id}

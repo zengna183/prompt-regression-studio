@@ -2,6 +2,12 @@ import type {
   CreateProject,
   CreatePrompt,
   CreatePromptVersion,
+  CreateDataset,
+  Dataset,
+  DatasetVersion,
+  DatasetImportPreviewRequest,
+  DatasetImportRequest,
+  DatasetImportPreview,
   Project,
   Prompt,
   PromptVersion,
@@ -18,6 +24,7 @@ import {
   parseDiagnosisRunDetail,
   parseDiagnosisRunList,
 } from "../diagnosis/validation";
+import { parseImportPreview } from "../lib/datasetImport";
 
 const configuredBaseUrl = import.meta.env.VITE_API_URL?.trim();
 const API_BASE_URL = (configuredBaseUrl || "http://localhost:4000").replace(/\/$/, "");
@@ -153,6 +160,56 @@ export function getDiagnosisErrorMessage(error: unknown): string {
 }
 
 export const api = {
+  async listDatasets(projectId: string, signal?: AbortSignal): Promise<Dataset[]> {
+    return unwrapList<Dataset>(
+      await request(
+        `/v1/projects/${encodeURIComponent(projectId)}/datasets`,
+        signal ? { signal } : undefined,
+      ),
+    );
+  },
+  async createDataset(projectId: string, input: CreateDataset): Promise<Dataset> {
+    return unwrapEntity<Dataset>(
+      await request(`/v1/projects/${encodeURIComponent(projectId)}/datasets`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
+  },
+  async listDatasetVersions(datasetId: string, signal?: AbortSignal): Promise<DatasetVersion[]> {
+    return unwrapList<DatasetVersion>(
+      await request(
+        `/v1/datasets/${encodeURIComponent(datasetId)}/versions`,
+        signal ? { signal } : undefined,
+      ),
+    );
+  },
+  async previewDatasetImport(
+    datasetId: string,
+    input: DatasetImportPreviewRequest,
+    signal?: AbortSignal,
+  ): Promise<DatasetImportPreview> {
+    return parseImportPreview(
+      await request(`/v1/datasets/${encodeURIComponent(datasetId)}/import-preview`, {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...(signal ? { signal } : {}),
+      }),
+    );
+  },
+  async importDataset(
+    datasetId: string,
+    input: DatasetImportRequest,
+    signal?: AbortSignal,
+  ): Promise<DatasetVersion> {
+    return unwrapEntity<DatasetVersion>(
+      await request(`/v1/datasets/${encodeURIComponent(datasetId)}/import`, {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...(signal ? { signal } : {}),
+      }),
+    );
+  },
   async diagnose(
     bundle: CanonicalRegressionBundle,
     signal?: AbortSignal,

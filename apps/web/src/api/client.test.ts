@@ -8,6 +8,60 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("评测集导入 API 客户端", () => {
+  it("先获取预览，再带同一指纹保存原始内容并传递取消信号", async () => {
+    const preview = {
+      previewHash: "a".repeat(64),
+      totalRows: 1,
+      validRows: 1,
+      errorCount: 0,
+      canImport: true,
+      issuesTruncated: false,
+      issues: [],
+      previewRows: [{ row: 1, case: { caseKey: "a", input: "你好" } }],
+    };
+    const saved = { id: "version", status: "draft", caseCount: 1 };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(preview))
+      .mockResolvedValueOnce(jsonResponse(saved));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const input = { format: "json" as const, content: '[{"input":"你好"}]' };
+    const result = await api.previewDatasetImport("dataset", input, controller.signal);
+    expect(
+      await api.importDataset(
+        "dataset",
+        { ...input, previewHash: result.previewHash },
+        controller.signal,
+      ),
+    ).toEqual(saved);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("/dataset/import-preview"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/dataset/import"),
+      expect.objectContaining({
+        body: JSON.stringify({ ...input, previewHash: preview.previewHash }),
+        signal: controller.signal,
+      }),
+    );
+  });
+  it("拒绝畸形预览响应", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ canImport: true })));
+    await expect(
+      api.previewDatasetImport("dataset", { format: "csv", content: "input\nx" }),
+    ).rejects.toThrow("格式不正确");
+  });
+});
+
 describe("诊断 API 客户端", () => {
   it("向诊断端点发送 canonical bundle，并解析包装后的报告", async () => {
     let capturedInput: RequestInfo | URL | undefined;

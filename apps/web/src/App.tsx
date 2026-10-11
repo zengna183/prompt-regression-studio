@@ -6,8 +6,9 @@ import { DiagnosisWorkspace } from "./components/DiagnosisWorkspace";
 import { ProjectSidebar } from "./components/ProjectSidebar";
 import { PromptWorkspace } from "./components/PromptWorkspace";
 import { EmptyState } from "./components/StatusViews";
+import { DatasetWorkspace } from "./components/DatasetWorkspace";
 
-export type ActiveView = "catalog" | "diagnosis";
+export type ActiveView = "catalog" | "diagnosis" | "datasets";
 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -58,7 +59,7 @@ export function App() {
 
   const handleSelectProject = useCallback((projectId: string) => {
     setSelectedProjectId(projectId);
-    setActiveView("catalog");
+    setActiveView((current) => (current === "datasets" ? "datasets" : "catalog"));
   }, []);
 
   return (
@@ -80,6 +81,8 @@ export function App() {
       <div id="main-content" className="app-content">
         {activeView === "diagnosis" ? (
           <DiagnosisWorkspace />
+        ) : activeView === "datasets" && selectedProject ? (
+          <DatasetWorkspace key={selectedProject.id} project={selectedProject} />
         ) : selectedProject ? (
           <PromptWorkspace key={selectedProject.id} project={selectedProject} />
         ) : !loading && !error ? (

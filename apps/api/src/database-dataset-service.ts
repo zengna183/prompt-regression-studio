@@ -9,7 +9,7 @@ import {
   InvalidVersionStateError,
   RepositoryConflictError,
   VersionContentError,
-  type Database,
+  type RepositoryDatabase,
   type Dataset,
   type DatasetVersion,
   type EvaluationCase,
@@ -84,7 +84,7 @@ async function fromRepository<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export function createDatabaseDatasetService(db: Database): DatasetService {
+export function createDatabaseDatasetService(db: RepositoryDatabase): DatasetService {
   const datasets = createDatasetRepository(db);
   return {
     async list(projectId) {

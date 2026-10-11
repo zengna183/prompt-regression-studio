@@ -3,6 +3,9 @@ import {
   CreateDatasetVersionSchema,
   DatasetSchema,
   DatasetVersionSchema,
+  DatasetImportPreviewRequestSchema,
+  DatasetImportRequestSchema,
+  DatasetImportPreviewSchema,
   EvaluationCaseSchema,
   UuidSchema,
 } from "@ai-chat-eval/contracts";
@@ -11,6 +14,7 @@ import { Type } from "@sinclair/typebox";
 
 import type { DatasetService } from "../dataset-service.js";
 import { ApiError } from "../errors.js";
+import { DATASET_IMPORT_VERSION, parseDatasetImport } from "../dataset-import.js";
 
 const ProjectParams = Type.Object({ projectId: UuidSchema }, { additionalProperties: false });
 const DatasetParams = Type.Object({ datasetId: UuidSchema }, { additionalProperties: false });
@@ -90,6 +94,68 @@ export function datasetRoutes(service: DatasetService | undefined): FastifyPlugi
         },
       },
       async (request) => requireService().listCases(request.params.versionId),
+    );
+
+    app.post(
+      "/v1/datasets/:datasetId/import-preview",
+      {
+        config: { rateLimit: { max: 20, timeWindow: 60_000 } },
+        schema: {
+          tags: ["datasets"],
+          params: DatasetParams,
+          body: DatasetImportPreviewRequestSchema,
+          response: { 200: DatasetImportPreviewSchema },
+        },
+      },
+      async (request) => {
+        await requireService().listVersions(request.params.datasetId);
+        return parseDatasetImport(request.body).preview;
+      },
+    );
+    app.post(
+      "/v1/datasets/:datasetId/import",
+      {
+        config: { rateLimit: { max: 10, timeWindow: 60_000 } },
+        schema: {
+          tags: ["datasets"],
+          params: DatasetParams,
+          body: DatasetImportRequestSchema,
+          response: { 201: DatasetVersionSchema },
+        },
+      },
+      async (request, reply) => {
+        const service = requireService();
+        await service.listVersions(request.params.datasetId);
+        const { preview, cases } = parseDatasetImport(request.body);
+        if (!preview.canImport)
+          throw new ApiError(
+            422,
+            "DATASET_IMPORT_INVALID",
+            "导入存在错误，请修正后重新预览。",
+            preview,
+          );
+        if (preview.previewHash !== request.body.previewHash)
+          throw new ApiError(
+            409,
+            "DATASET_IMPORT_PREVIEW_CHANGED",
+            "文件内容或解析规则已变化，请重新预览。",
+          );
+        const version = await service.createVersion(request.params.datasetId, {
+          source: "imported",
+          cases,
+          generationProvenance: {
+            parser: DATASET_IMPORT_VERSION,
+            format: request.body.format,
+            sourceHash: preview.previewHash,
+            rowCount: cases.length,
+          },
+          ...(request.body.parentVersionId
+            ? { parentVersionId: request.body.parentVersionId }
+            : {}),
+          changeSummary: `导入 ${cases.length} 条 ${request.body.format.toUpperCase()} 用例（待审核草稿）`,
+        });
+        return reply.code(201).send(version);
+      },
     );
 
     app.post(

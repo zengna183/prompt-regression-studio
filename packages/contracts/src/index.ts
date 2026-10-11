@@ -250,6 +250,52 @@ export const CreateDatasetVersionSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const DatasetImportFormatSchema = Type.Union([Type.Literal("json"), Type.Literal("csv")]);
+export const DatasetImportPreviewRequestSchema = Type.Object(
+  {
+    format: DatasetImportFormatSchema,
+    content: Type.String({ minLength: 1, maxLength: 2 * 1024 * 1024 }),
+  },
+  { additionalProperties: false },
+);
+export const DatasetImportRequestSchema = Type.Object(
+  {
+    ...DatasetImportPreviewRequestSchema.properties,
+    previewHash: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    parentVersionId: Type.Optional(UuidSchema),
+  },
+  { additionalProperties: false },
+);
+export const DatasetImportPreviewSchema = Type.Object(
+  {
+    previewHash: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    totalRows: Type.Integer({ minimum: 0 }),
+    validRows: Type.Integer({ minimum: 0 }),
+    errorCount: Type.Integer({ minimum: 0 }),
+    canImport: Type.Boolean(),
+    issuesTruncated: Type.Boolean(),
+    issues: Type.Array(
+      Type.Object(
+        {
+          row: Type.Integer({ minimum: 0 }),
+          field: Type.String(),
+          message: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 100 },
+    ),
+    previewRows: Type.Array(
+      Type.Object(
+        { row: Type.Integer({ minimum: 1 }), case: EvaluationCaseInputSchema },
+        { additionalProperties: false },
+      ),
+      { maxItems: 20 },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 export const DatasetVersionSchema = Type.Object(
   {
     id: UuidSchema,
@@ -525,6 +571,10 @@ export type Dataset = Static<typeof DatasetSchema>;
 export type CreateDataset = Static<typeof CreateDatasetSchema>;
 export type EvaluationCaseInput = Static<typeof EvaluationCaseInputSchema>;
 export type CreateDatasetVersion = Static<typeof CreateDatasetVersionSchema>;
+export type DatasetImportFormat = Static<typeof DatasetImportFormatSchema>;
+export type DatasetImportPreviewRequest = Static<typeof DatasetImportPreviewRequestSchema>;
+export type DatasetImportRequest = Static<typeof DatasetImportRequestSchema>;
+export type DatasetImportPreview = Static<typeof DatasetImportPreviewSchema>;
 export type DatasetVersion = Static<typeof DatasetVersionSchema>;
 export type EvaluationCase = Static<typeof EvaluationCaseSchema>;
 export type ExperimentPromptVersion = Static<typeof ExperimentPromptVersionSchema>;
