@@ -156,6 +156,107 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("dataset import PostgreSQL workf
           });
           expect(blockedAi.statusCode).toBe(409);
           expect(blockedAi.json()).toMatchObject({ code: "DATASET_REVIEW_REQUIRED" });
+          const editedCases = (await service.listCases(version.id)).map((item) => ({
+            caseKey: item.caseKey,
+            ...(item.name ? { name: item.name } : {}),
+            input: item.input,
+            ...(item.expectedOutput === null ? {} : { expectedOutput: item.expectedOutput }),
+            metadata: item.metadata,
+          }));
+          const firstEdited = editedCases[0];
+          if (!firstEdited) throw new Error("Missing import case");
+          editedCases[0] = { ...firstEdited, expectedOutput: "人工核对后的问候" };
+          const reviewed = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${version.id}/review`,
+            payload: {
+              cases: editedCases,
+              reviewerName: "测试审核人",
+              reviewNotes: "已逐条核对并修改参考回答",
+              acknowledged: true,
+            },
+          });
+          expect(reviewed.statusCode).toBe(200);
+          const reviewedVersion = objectResponse(reviewed);
+          expect(reviewedVersion).toMatchObject({
+            status: "draft",
+            source: "mixed",
+            parentVersionId: version.id,
+            reviewedBy: "测试审核人",
+            reviewNotes: "已逐条核对并修改参考回答",
+          });
+          if (typeof reviewedVersion.id !== "string")
+            throw new Error("Missing reviewed version ID");
+          expect(reviewedVersion.id).not.toBe(version.id);
+          expect((await service.listCases(version.id))[0]?.expectedOutput).toBe("你好");
+          expect((await service.listCases(reviewedVersion.id))[0]?.expectedOutput).toBe(
+            "人工核对后的问候",
+          );
+          const sameReview = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${reviewedVersion.id}/review`,
+            payload: {
+              cases: editedCases,
+              reviewerName: "测试审核人",
+              reviewNotes: "已逐条核对并修改参考回答",
+              acknowledged: true,
+            },
+          });
+          expect(sameReview.statusCode).toBe(200);
+          expect(objectResponse(sameReview).id).toBe(reviewedVersion.id);
+          const changedReviewRecord = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${reviewedVersion.id}/review`,
+            payload: {
+              cases: editedCases,
+              reviewerName: "其他审核人",
+              acknowledged: true,
+            },
+          });
+          expect(changedReviewRecord.statusCode).toBe(409);
+          expect(changedReviewRecord.json()).toMatchObject({ code: "DATASET_ALREADY_REVIEWED" });
+          const published = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${reviewedVersion.id}/publish`,
+          });
+          expect(published.statusCode).toBe(200);
+          expect(published.json()).toMatchObject({ status: "published", reviewedBy: "测试审核人" });
+          expect(
+            (
+              await app.inject({
+                method: "POST",
+                url: `/v1/dataset-versions/${reviewedVersion.id}/review`,
+                payload: { cases: editedCases, reviewerName: "测试审核人", acknowledged: true },
+              })
+            ).statusCode,
+          ).toBe(409);
+
+          const acceptedAiCases = (await service.listCases(aiVersion.id)).map((item) => ({
+            caseKey: item.caseKey,
+            ...(item.name ? { name: item.name } : {}),
+            input: item.input,
+            ...(item.expectedOutput === null ? {} : { expectedOutput: item.expectedOutput }),
+            metadata: item.metadata,
+          }));
+          const acceptedAi = await app.inject({
+            method: "POST",
+            url: `/v1/dataset-versions/${aiVersion.id}/review`,
+            payload: { cases: acceptedAiCases, reviewerName: "测试审核人", acknowledged: true },
+          });
+          expect(acceptedAi.statusCode).toBe(200);
+          expect(acceptedAi.json()).toMatchObject({
+            id: aiVersion.id,
+            source: "ai_generated",
+            reviewedBy: "测试审核人",
+          });
+          expect(
+            (
+              await app.inject({
+                method: "POST",
+                url: `/v1/dataset-versions/${aiVersion.id}/publish`,
+              })
+            ).statusCode,
+          ).toBe(200);
         } finally {
           await app.close();
         }

@@ -58,6 +58,8 @@ describe("normalizeEvaluationCases", () => {
       ],
     },
     { cases: [{ caseKey: "case-1", input: Number.NaN }] },
+    { cases: [{ caseKey: "case-1", input: null }] },
+    { cases: [{ caseKey: "case-1", input: "   " }] },
     {
       cases: [
         {

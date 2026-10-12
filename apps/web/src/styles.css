@@ -62,6 +62,22 @@
 .dataset-versions li {
   margin: 0.6rem 0;
 }
+.dataset-versions li .button {
+  margin-left: 0.6rem;
+}
+.dataset-review-case {
+  display: grid;
+  gap: 0.8rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.dataset-review-case__check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 @media (max-width: 700px) {
   .dataset-import__controls {
     grid-template-columns: 1fr;

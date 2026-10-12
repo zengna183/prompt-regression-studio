@@ -495,6 +495,7 @@ describe("API", () => {
       listVersions: vi.fn(() => Promise.resolve([draftVersion])),
       createVersion,
       listCases,
+      reviewVersion: vi.fn(),
       publishVersion,
     };
     const app = await buildTestApp(

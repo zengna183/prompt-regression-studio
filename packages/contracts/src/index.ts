@@ -305,6 +305,16 @@ export const GenerateDatasetCasesRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ReviewDatasetVersionRequestSchema = Type.Object(
+  {
+    cases: Type.Array(EvaluationCaseInputSchema, { minItems: 1, maxItems: 5000 }),
+    reviewerName: Type.String({ minLength: 2, maxLength: 120 }),
+    reviewNotes: Type.Optional(Type.String({ maxLength: 2000 })),
+    acknowledged: Type.Literal(true),
+  },
+  { additionalProperties: false },
+);
+
 export const DatasetVersionSchema = Type.Object(
   {
     id: UuidSchema,
@@ -317,6 +327,9 @@ export const DatasetVersionSchema = Type.Object(
     generationProvenance: Type.Unknown(),
     parentVersionId: Type.Union([UuidSchema, Type.Null()]),
     changeSummary: Type.Union([Type.String(), Type.Null()]),
+    reviewedAt: Type.Optional(Type.Union([IsoDateSchema, Type.Null()])),
+    reviewedBy: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    reviewNotes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     createdAt: IsoDateSchema,
     publishedAt: Type.Union([IsoDateSchema, Type.Null()]),
   },
@@ -585,6 +598,7 @@ export type DatasetImportPreviewRequest = Static<typeof DatasetImportPreviewRequ
 export type DatasetImportRequest = Static<typeof DatasetImportRequestSchema>;
 export type DatasetImportPreview = Static<typeof DatasetImportPreviewSchema>;
 export type GenerateDatasetCasesRequest = Static<typeof GenerateDatasetCasesRequestSchema>;
+export type ReviewDatasetVersionRequest = Static<typeof ReviewDatasetVersionRequestSchema>;
 export type DatasetVersion = Static<typeof DatasetVersionSchema>;
 export type EvaluationCase = Static<typeof EvaluationCaseSchema>;
 export type ExperimentPromptVersion = Static<typeof ExperimentPromptVersionSchema>;

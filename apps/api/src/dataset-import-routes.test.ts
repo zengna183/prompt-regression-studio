@@ -50,12 +50,21 @@ async function setup(authToken?: string) {
     return Promise.resolve(draft);
   });
   const publishVersion = vi.fn();
+  const reviewVersion = vi.fn(() =>
+    Promise.resolve({
+      ...draft,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: "审核人",
+      reviewNotes: null,
+    }),
+  );
   const service: DatasetService = {
     list: vi.fn(() => Promise.resolve([])),
     create: vi.fn(),
     listVersions,
     createVersion,
     listCases: vi.fn(() => Promise.resolve([])),
+    reviewVersion,
     publishVersion,
   };
   const app = await buildApp({
@@ -66,10 +75,41 @@ async function setup(authToken?: string) {
     ...(authToken ? { authToken } : {}),
   });
   apps.push(app);
-  return { app, createVersion, listVersions, publishVersion };
+  return { app, createVersion, listVersions, reviewVersion, publishVersion };
 }
 
 describe("dataset import HTTP workflow", () => {
+  it("requires explicit human acknowledgement before accepting review content", async () => {
+    const token = "dataset-review-token-32-characters-minimum";
+    const { app, reviewVersion } = await setup(token);
+    const url = `/v1/dataset-versions/${randomUUID()}/review`;
+    const payload = {
+      cases: [{ caseKey: "case-1", input: "你好", expectedOutput: "您好" }],
+      reviewerName: "审核人",
+      acknowledged: true,
+    };
+    expect((await app.inject({ method: "POST", url, payload })).statusCode).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers: { authorization: `Bearer ${token}` },
+          payload: { ...payload, acknowledged: false },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(reviewVersion).not.toHaveBeenCalled();
+    const accepted = await app.inject({
+      method: "POST",
+      url,
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ reviewedBy: "审核人" });
+    expect(reviewVersion).toHaveBeenCalledWith(expect.any(String), payload);
+  });
   it("previews without writing and creates a traceable draft only after confirmation", async () => {
     const { app, createVersion, publishVersion } = await setup();
     const preview = await app.inject({

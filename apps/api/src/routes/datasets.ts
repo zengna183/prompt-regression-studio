@@ -7,6 +7,7 @@ import {
   DatasetImportRequestSchema,
   DatasetImportPreviewSchema,
   GenerateDatasetCasesRequestSchema,
+  ReviewDatasetVersionRequestSchema,
   EvaluationCaseSchema,
   UuidSchema,
 } from "@ai-chat-eval/contracts";
@@ -211,6 +212,20 @@ export function datasetRoutes(
           .code(201)
           .send(await datasetService.createVersion(request.params.datasetId, versionInput));
       },
+    );
+
+    app.post(
+      "/v1/dataset-versions/:versionId/review",
+      {
+        config: { rateLimit: { max: 10, timeWindow: 60_000 } },
+        schema: {
+          tags: ["datasets"],
+          params: VersionParams,
+          body: ReviewDatasetVersionRequestSchema,
+          response: { 200: DatasetVersionSchema },
+        },
+      },
+      async (request) => requireService().reviewVersion(request.params.versionId, request.body),
     );
 
     app.post(

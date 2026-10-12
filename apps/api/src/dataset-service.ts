@@ -4,6 +4,7 @@ import type {
   Dataset,
   DatasetVersion,
   EvaluationCase,
+  ReviewDatasetVersionRequest,
 } from "@ai-chat-eval/contracts";
 
 export interface DatasetService {
@@ -12,5 +13,6 @@ export interface DatasetService {
   listVersions(datasetId: string): Promise<DatasetVersion[]>;
   createVersion(datasetId: string, input: CreateDatasetVersion): Promise<DatasetVersion>;
   listCases(versionId: string): Promise<EvaluationCase[]>;
+  reviewVersion(versionId: string, input: ReviewDatasetVersionRequest): Promise<DatasetVersion>;
   publishVersion(versionId: string): Promise<DatasetVersion>;
 }

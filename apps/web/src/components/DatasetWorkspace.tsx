@@ -4,6 +4,7 @@ import type { Dataset, DatasetVersion, Project } from "@ai-chat-eval/contracts";
 import { api, getErrorMessage } from "../api/client";
 import { DatasetImport } from "./DatasetImport";
 import { DatasetGeneration } from "./DatasetGeneration";
+import { DatasetReview } from "./DatasetReview";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
 
 export function DatasetWorkspace({ project }: { project: Project }) {
@@ -136,6 +137,7 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openVersionId, setOpenVersionId] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -153,6 +155,7 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
       });
     return () => controller.abort();
   }, [datasetId, reload]);
+  const selectedVersion = versions.find((version) => version.id === openVersionId);
   return (
     <>
       <DatasetImport
@@ -183,7 +186,9 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
               <li key={version.id}>
                 v{version.version} ·{" "}
                 {version.status === "draft"
-                  ? "待审核草稿"
+                  ? version.reviewedAt
+                    ? "已审核待发布"
+                    : "待审核草稿"
                   : version.status === "published"
                     ? "已发布"
                     : "已归档"}{" "}
@@ -195,11 +200,38 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
                 typeof version.generationProvenance.model === "string"
                   ? ` · 模型：${version.generationProvenance.model}`
                   : null}
+                <button
+                  className="button button--quiet"
+                  type="button"
+                  onClick={() =>
+                    setOpenVersionId((current) => (current === version.id ? null : version.id))
+                  }
+                >
+                  {openVersionId === version.id
+                    ? "收起"
+                    : version.status === "draft"
+                      ? "查看并审核"
+                      : "查看"}
+                </button>
               </li>
             ))}
           </ul>
         )}
       </section>
+      {selectedVersion ? (
+        <DatasetReview
+          key={selectedVersion.id}
+          version={selectedVersion}
+          onChanged={(version) => {
+            setVersions((current) => [
+              version,
+              ...current.filter((item) => item.id !== version.id),
+            ]);
+            setOpenVersionId(version.id);
+            setReload((value) => value + 1);
+          }}
+        />
+      ) : null}
     </>
   );
 }

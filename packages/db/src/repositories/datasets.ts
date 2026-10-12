@@ -56,6 +56,12 @@ export interface CreateDatasetVersionInput {
   readonly createdBy?: string | null;
 }
 
+export interface ReviewDatasetVersionInput {
+  readonly cases: readonly EvaluationCaseInput[];
+  readonly reviewerName: string;
+  readonly reviewNotes?: string | null;
+}
+
 export interface NormalizedEvaluationCase {
   readonly caseKey: string;
   readonly name: string | null;
@@ -73,6 +79,7 @@ export interface DatasetRepository {
   listVersions(datasetId: string): Promise<DatasetVersion[]>;
   getVersionById(id: string): Promise<DatasetVersion | null>;
   listCases(versionId: string): Promise<EvaluationCase[]>;
+  reviewVersion(id: string, input: ReviewDatasetVersionInput): Promise<DatasetVersion>;
   publishVersion(id: string): Promise<DatasetVersion>;
 }
 
@@ -255,6 +262,85 @@ export function createDatasetRepository(db: RepositoryDatabase): DatasetReposito
         .orderBy(asc(evaluationCases.sortOrder), asc(evaluationCases.id));
     },
 
+    async reviewVersion(id, input) {
+      const normalizedCases = normalizeEvaluationCases(input.cases);
+      const contentHash = hashDatasetCases(normalizedCases);
+      const reviewerName = normalizeReviewerName(input.reviewerName);
+      const reviewNotes = normalizeReviewNotes(input.reviewNotes);
+      const [lookup] = await db
+        .select({ datasetId: datasetVersions.datasetId })
+        .from(datasetVersions)
+        .where(eq(datasetVersions.id, id))
+        .limit(1);
+      if (!lookup) throw new EntityNotFoundError("DatasetVersion", id);
+
+      return db.transaction(async (tx) => {
+        // Lock in the same order as createVersion: dataset first, then version.
+        await tx.execute(
+          sql`select ${datasets.id} from ${datasets} where ${datasets.id} = ${lookup.datasetId} for update`,
+        );
+        const [dataset] = await tx
+          .select()
+          .from(datasets)
+          .where(eq(datasets.id, lookup.datasetId))
+          .limit(1);
+        if (!dataset || dataset.archivedAt) {
+          throw new RepositoryConflictError(
+            "DATASET_ARCHIVED",
+            "Cannot review an archived dataset",
+          );
+        }
+        await tx.execute(
+          sql`select ${datasetVersions.id} from ${datasetVersions} where ${datasetVersions.id} = ${id} for update`,
+        );
+        const [source] = await tx
+          .select()
+          .from(datasetVersions)
+          .where(eq(datasetVersions.id, id))
+          .limit(1);
+        if (!source) throw new EntityNotFoundError("DatasetVersion", id);
+        if (source.status !== "draft") {
+          throw new InvalidVersionStateError(
+            source.status,
+            "Only draft dataset versions can be reviewed",
+          );
+        }
+        if (contentHash === source.contentHash) {
+          if (source.reviewedAt) {
+            if (source.reviewedBy === reviewerName && source.reviewNotes === reviewNotes)
+              return source;
+            throw new RepositoryConflictError(
+              "DATASET_ALREADY_REVIEWED",
+              "Review records are immutable; change the cases to create a new reviewed version",
+            );
+          }
+          const [reviewed] = await tx
+            .update(datasetVersions)
+            .set({ reviewedAt: new Date(), reviewedBy: reviewerName, reviewNotes })
+            .where(eq(datasetVersions.id, id))
+            .returning();
+          if (!reviewed) throw new EntityNotFoundError("DatasetVersion", id);
+          return reviewed;
+        }
+
+        const created = await createDatasetRepository(tx).createVersion(source.datasetId, {
+          source: source.source === "manual" ? "manual" : "mixed",
+          cases: input.cases,
+          generationProvenance: source.generationProvenance,
+          parentVersionId: source.id,
+          changeSummary: `人工审核修改自 v${source.version}`,
+          createdBy: reviewerName,
+        });
+        const [reviewed] = await tx
+          .update(datasetVersions)
+          .set({ reviewedAt: new Date(), reviewedBy: reviewerName, reviewNotes })
+          .where(eq(datasetVersions.id, created.id))
+          .returning();
+        if (!reviewed) throw new EntityNotFoundError("DatasetVersion", created.id);
+        return reviewed;
+      });
+    },
+
     async publishVersion(id) {
       return db.transaction(async (tx) => {
         await tx.execute(
@@ -273,10 +359,10 @@ export function createDatasetRepository(db: RepositoryDatabase): DatasetReposito
             `Cannot publish a dataset version in ${existing.status} state`,
           );
         }
-        if (existing.source !== "manual") {
+        if (!existing.reviewedAt) {
           throw new RepositoryConflictError(
             "DATASET_REVIEW_REQUIRED",
-            "Imported and AI-generated dataset versions require human review before publishing",
+            "Dataset versions require human review before publishing",
           );
         }
         if (existing.caseCount < 1) {
@@ -306,6 +392,9 @@ export function normalizeEvaluationCases(
   }
   const keys = new Set<string>();
   return input.map((item, index) => {
+    if (item.input === null || (typeof item.input === "string" && item.input.trim() === "")) {
+      throw new VersionContentError(`cases[${index}].input must not be empty`);
+    }
     const caseKey = normalizeCaseKey(item.caseKey, index);
     if (keys.has(caseKey))
       throw new VersionContentError(`Duplicate evaluation case key: ${caseKey}`);
@@ -408,4 +497,21 @@ function normalizeActor(value: string | null | undefined): string | null {
   const normalized = value.trim();
   if (normalized.length > 255) throw new TypeError("createdBy must be at most 255 characters");
   return normalized;
+}
+
+function normalizeReviewerName(value: string): string {
+  if (typeof value !== "string") throw new VersionContentError("reviewerName is required");
+  const normalized = value.trim();
+  if (normalized.length < 2 || normalized.length > 120) {
+    throw new VersionContentError("reviewerName must contain 2-120 characters");
+  }
+  return normalized;
+}
+
+function normalizeReviewNotes(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new VersionContentError("reviewNotes must be a string");
+  const normalized = value.trim();
+  if (normalized.length > 2000) throw new VersionContentError("reviewNotes is too long");
+  return normalized || null;
 }

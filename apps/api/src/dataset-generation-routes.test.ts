@@ -42,6 +42,7 @@ async function setup(options: { generator?: DatasetCaseGenerator; authToken?: st
     listVersions,
     createVersion,
     listCases: vi.fn(() => Promise.resolve([])),
+    reviewVersion: vi.fn(),
     publishVersion: vi.fn(),
   };
   const app = await buildApp({

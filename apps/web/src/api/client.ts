@@ -9,6 +9,7 @@ import type {
   DatasetImportRequest,
   DatasetImportPreview,
   GenerateDatasetCasesRequest,
+  ReviewDatasetVersionRequest,
   EvaluationCase,
   Project,
   Prompt,
@@ -235,6 +236,24 @@ export const api = {
   async listDatasetCases(versionId: string): Promise<EvaluationCase[]> {
     return unwrapList<EvaluationCase>(
       await request(`/v1/dataset-versions/${encodeURIComponent(versionId)}/cases`),
+    );
+  },
+  async reviewDatasetVersion(
+    versionId: string,
+    input: ReviewDatasetVersionRequest,
+  ): Promise<DatasetVersion> {
+    return unwrapEntity<DatasetVersion>(
+      await request(`/v1/dataset-versions/${encodeURIComponent(versionId)}/review`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
+  },
+  async publishDatasetVersion(versionId: string): Promise<DatasetVersion> {
+    return unwrapEntity<DatasetVersion>(
+      await request(`/v1/dataset-versions/${encodeURIComponent(versionId)}/publish`, {
+        method: "POST",
+      }),
     );
   },
   async diagnose(

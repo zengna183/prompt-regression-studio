@@ -44,6 +44,9 @@ function versionDto(version: DatasetVersion): ApiDatasetVersion {
     generationProvenance: version.generationProvenance,
     parentVersionId: version.parentVersionId,
     changeSummary: version.changeSummary,
+    reviewedAt: version.reviewedAt?.toISOString() ?? null,
+    reviewedBy: version.reviewedBy,
+    reviewNotes: version.reviewNotes,
     createdAt: version.createdAt.toISOString(),
     publishedAt: version.publishedAt?.toISOString() ?? null,
   };
@@ -126,6 +129,17 @@ export function createDatabaseDatasetService(db: RepositoryDatabase): DatasetSer
       const version = await fromRepository(() => datasets.getVersionById(versionId));
       if (!version) throw new ApiError(404, "NOT_FOUND", `DatasetVersion not found: ${versionId}`);
       return (await fromRepository(() => datasets.listCases(versionId))).map(caseDto);
+    },
+    async reviewVersion(versionId, input) {
+      return versionDto(
+        await fromRepository(() =>
+          datasets.reviewVersion(versionId, {
+            cases: input.cases as readonly EvaluationCaseInput[],
+            reviewerName: input.reviewerName,
+            reviewNotes: input.reviewNotes ?? null,
+          }),
+        ),
+      );
     },
     async publishVersion(versionId) {
       return versionDto(await fromRepository(() => datasets.publishVersion(versionId)));
