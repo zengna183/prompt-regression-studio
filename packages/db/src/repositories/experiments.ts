@@ -144,7 +144,7 @@ export function createExperimentRepository(
   db: RepositoryDatabase,
   options: { readonly maxActiveExperimentsPerProject?: number } = {},
 ): ExperimentRepository {
-  const maxActive = options.maxActiveExperimentsPerProject ?? 4;
+  const maxActive = options.maxActiveExperimentsPerProject ?? 8;
   if (!Number.isSafeInteger(maxActive) || maxActive < 1 || maxActive > 100) {
     throw new TypeError("maxActiveExperimentsPerProject must be between 1 and 100");
   }

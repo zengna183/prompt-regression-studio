@@ -9,6 +9,7 @@ import {
   experimentPromptVersions,
   prompts,
   promptVersions,
+  projects,
   generationRuns,
   evaluationRuns,
   type AblationExperiment,
@@ -29,7 +30,10 @@ export interface AblationRepository {
   list(projectId: string, sourceExperimentId: string): Promise<AblationExperiment[]>;
 }
 
-export function createAblationRepository(db: RepositoryDatabase): AblationRepository {
+export function createAblationRepository(
+  db: RepositoryDatabase,
+  options: { readonly maxActiveExperimentsPerProject?: number } = {},
+): AblationRepository {
   return {
     async list(projectId, sourceExperimentId) {
       return db
@@ -42,6 +46,14 @@ export function createAblationRepository(db: RepositoryDatabase): AblationReposi
     },
     async create(input) {
       return db.transaction(async (tx) => {
+        // Match the project-before-experiment lock order used by normal starts.
+        const [project] = await tx
+          .select({ id: projects.id })
+          .from(projects)
+          .where(eq(projects.id, input.projectId))
+          .for("update")
+          .limit(1);
+        if (!project) throw new EntityNotFoundError("Project", input.projectId);
         // Serializes retries and enforces a per-source limit before any paid jobs exist.
         const [source] = await tx
           .select()
@@ -133,6 +145,11 @@ export function createAblationRepository(db: RepositoryDatabase): AblationReposi
           model: run.generation.model,
           modelConfig: run.generation.modelConfig,
           evaluatorModel,
+          ...(source.costBudgetUsd === null || source.costPricing === null
+            ? {}
+            : {
+                costBudget: { maxUsd: source.costBudgetUsd, ...source.costPricing },
+              }),
         });
         if (
           selected.some((items) =>
@@ -187,7 +204,7 @@ export function createAblationRepository(db: RepositoryDatabase): AblationReposi
           });
           variant = await promptRepository.publishVersion(draft.id);
         }
-        const experimentRepository = createExperimentRepository(tx);
+        const experimentRepository = createExperimentRepository(tx, options);
         const created = await experimentRepository.create({
           projectId: input.projectId,
           datasetVersionId: source.datasetVersionId,
@@ -207,6 +224,11 @@ export function createAblationRepository(db: RepositoryDatabase): AblationReposi
           model: start.model,
           modelConfig: start.modelConfig,
           evaluatorModel,
+          ...(source.costBudgetUsd === null || source.costPricing === null
+            ? {}
+            : {
+                costBudget: { maxUsd: source.costBudgetUsd, ...source.costPricing },
+              }),
         });
         const [link] = await tx
           .insert(ablationExperiments)

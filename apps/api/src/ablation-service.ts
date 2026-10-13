@@ -24,8 +24,9 @@ export interface AblationService {
 export function createDatabaseAblationService(
   db: Database,
   notifier: ExperimentStartNotifier,
+  options: { readonly maxActiveExperimentsPerProject?: number } = {},
 ): AblationService {
-  const repository = createAblationRepository(db);
+  const repository = createAblationRepository(db, options);
   const diagnoses = createExperimentDiagnosisRepository(db);
   const experiments = createExperimentRepository(db);
   const dto = (link: Awaited<ReturnType<typeof repository.create>>): Ablation => ({

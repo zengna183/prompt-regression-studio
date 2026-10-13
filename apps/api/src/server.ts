@@ -69,7 +69,9 @@ const app = await buildApp({
   experimentService: createDatabaseExperimentService(database.db, evaluationOutboxNotifier, {
     maxActiveExperimentsPerProject: config.MAX_ACTIVE_EXPERIMENTS_PER_PROJECT,
   }),
-  ablationService: createDatabaseAblationService(database.db, evaluationOutboxNotifier),
+  ablationService: createDatabaseAblationService(database.db, evaluationOutboxNotifier, {
+    maxActiveExperimentsPerProject: config.MAX_ACTIVE_EXPERIMENTS_PER_PROJECT,
+  }),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
   bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
   docsEnabled: config.API_DOCS_ENABLED,
