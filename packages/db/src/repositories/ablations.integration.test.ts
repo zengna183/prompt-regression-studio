@@ -139,6 +139,29 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("ablation PostgreSQL transaction
     });
   });
 
+  it("inherits the source experiment's estimated cost budget for a replay", async () => {
+    await isolated(async (tx, fixture) => {
+      const pricing = {
+        generationInputUsdPerMillionTokens: 1,
+        generationOutputUsdPerMillionTokens: 2,
+        evaluatorInputUsdPerMillionTokens: 3,
+        evaluatorOutputUsdPerMillionTokens: 4,
+      };
+      await tx
+        .update(experiments)
+        .set({ costBudgetUsd: 2, costPricing: pricing })
+        .where(eq(experiments.id, fixture.input.sourceExperimentId));
+      const link = await createAblationRepository(tx).create(fixture.input);
+      const [replay] = await tx
+        .select()
+        .from(experiments)
+        .where(eq(experiments.id, link.experimentId));
+      expect(replay?.costBudgetUsd).toBe(2);
+      expect(replay?.costPricing).toEqual(pricing);
+      expect(replay?.costReservedUsd).toBe(0);
+    });
+  });
+
   it("serializes concurrent duplicate requests without creating duplicate paid jobs", async () => {
     const fixture = await seed(client.db);
     try {
