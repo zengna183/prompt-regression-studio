@@ -1,3 +1,4 @@
+import { RepositoryConflictError } from "@ai-chat-eval/db";
 import type {
   EvaluationExecutionSnapshot,
   EvaluationRepository,
@@ -66,6 +67,8 @@ function createRepository(snapshot: EvaluationExecutionSnapshot): EvaluationRepo
   return {
     saved,
     getExecutionSnapshot: vi.fn(() => Promise.resolve(snapshot)),
+    isCancelled: vi.fn(() => Promise.resolve(false)),
+    reserveModelCall: vi.fn(() => Promise.resolve()),
     claimEvaluation: vi.fn(() => Promise.resolve(snapshot.evaluationRun)),
     startGenerationRun: vi.fn(() => Promise.resolve(snapshot.generationRun)),
     saveGenerationOutput: vi.fn((input: SaveGenerationOutputInput) => {
@@ -179,6 +182,85 @@ describe("evaluation executor", () => {
       failedCount: 0,
     });
     expect(repository.saved).toHaveLength(0);
+  });
+
+  it("stops before calling a provider when an experiment was cancelled", async () => {
+    const repository = createRepository(createSnapshot());
+    repository.isCancelled = vi.fn(() => Promise.resolve(true));
+    const fetchImpl = vi.fn<typeof fetch>();
+    const executor = createEvaluationExecutor({
+      repository,
+      baseUrl: "https://api.example.com",
+      apiKey: "provider-test-key-that-is-long-enough",
+      production: true,
+      allowPrivateNetwork: false,
+      timeoutMs: 10_000,
+      fetchImpl,
+    });
+    await expect(executor.execute("eval-run", logger)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(vi.mocked(repository, true).failEvaluationRun.mock.calls).toHaveLength(0);
+  });
+
+  it("aborts an in-flight provider request after cancellation", async () => {
+    const repository = createRepository(createSnapshot());
+    let checks = 0;
+    repository.isCancelled = vi.fn(() => Promise.resolve(++checks > 1));
+    const fetchImpl = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const executor = createEvaluationExecutor({
+      repository,
+      baseUrl: "https://api.example.com",
+      apiKey: "provider-test-key-that-is-long-enough",
+      production: true,
+      allowPrivateNetwork: false,
+      timeoutMs: 10_000,
+      fetchImpl,
+    });
+    await expect(executor.execute("eval-run", logger)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(repository, true).failEvaluationRun.mock.calls).toHaveLength(0);
+  });
+
+  it("stops a budgeted run before a model call would exceed the limit", async () => {
+    const snapshot = createSnapshot();
+    const repository = createRepository({
+      ...snapshot,
+      experiment: { ...snapshot.experiment, costBudgetUsd: 0.01 },
+    });
+    repository.reserveModelCall = vi.fn(() =>
+      Promise.reject(new RepositoryConflictError("COST_BUDGET_EXCEEDED", "Budget exhausted")),
+    );
+    const fetchImpl = vi.fn<typeof fetch>();
+    const executor = createEvaluationExecutor({
+      repository,
+      baseUrl: "https://api.example.com",
+      apiKey: "provider-test-key-that-is-long-enough",
+      production: true,
+      allowPrivateNetwork: false,
+      timeoutMs: 10_000,
+      fetchImpl,
+    });
+    await expect(executor.execute("eval-run", logger)).rejects.toMatchObject({
+      code: "COST_BUDGET_EXCEEDED",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(vi.mocked(repository, true).failEvaluationRun.mock.calls[0]).toEqual([
+      "eval-run",
+      expect.objectContaining({ code: "COST_BUDGET_EXCEEDED" }),
+    ]);
   });
 
   it("retries transient provider failures without duplicating persisted cases", async () => {

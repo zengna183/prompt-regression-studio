@@ -313,6 +313,7 @@ describe("API", () => {
     create.mockClear();
     const detail = {
       experiment,
+      costBudget: null,
       promptVersions: [
         {
           promptVersionId: experimentRequest.promptVersions[0].promptVersionId,
@@ -384,7 +385,8 @@ describe("API", () => {
       ],
     };
     const compare = vi.fn(() => Promise.resolve(comparison));
-    const service: ExperimentService = { list, get, compare, create, start };
+    const cancel = vi.fn(() => Promise.resolve({ ...experiment, status: "cancelled" as const }));
+    const service: ExperimentService = { list, get, compare, create, start, cancel };
     const app = await buildTestApp(
       new TestCatalog(),
       new RecordingDiagnosisEngine(),
@@ -416,6 +418,38 @@ describe("API", () => {
       evaluationRunIds: [evaluationRunId],
     });
     expect(start).toHaveBeenCalledWith(projectId, experimentId, startRequest);
+
+    const budgetedStart = {
+      ...startRequest,
+      costBudget: {
+        maxUsd: 1,
+        generationInputUsdPerMillionTokens: 1,
+        generationOutputUsdPerMillionTokens: 2,
+        evaluatorInputUsdPerMillionTokens: 1,
+        evaluatorOutputUsdPerMillionTokens: 2,
+      },
+    };
+    const budgeted = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/experiments/${experimentId}/start`,
+      payload: budgetedStart,
+    });
+    expect(budgeted.statusCode).toBe(202);
+    expect(start).toHaveBeenCalledWith(projectId, experimentId, budgetedStart);
+    const invalidBudget = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/experiments/${experimentId}/start`,
+      payload: { ...startRequest, costBudget: { maxUsd: 1 } },
+    });
+    expect(invalidBudget.statusCode).toBe(400);
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/experiments/${experimentId}/cancel`,
+    });
+    expect(cancelled.statusCode).toBe(200);
+    expect(cancelled.json()).toMatchObject({ id: experimentId, status: "cancelled" });
+    expect(cancel).toHaveBeenCalledWith(projectId, experimentId);
 
     const listed = await app.inject({
       method: "GET",

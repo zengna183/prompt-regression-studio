@@ -415,6 +415,22 @@ export const StartExperimentSchema = Type.Object(
       ),
     ),
     evaluatorModel: Type.Optional(Type.String({ minLength: 1, maxLength: 240 })),
+    costBudget: Type.Optional(
+      Type.Object(
+        {
+          maxUsd: Type.Number({
+            minimum: 0.01,
+            maximum: 100_000,
+            description: "Estimated USD reservation ceiling; actual provider billing may differ.",
+          }),
+          generationInputUsdPerMillionTokens: Type.Number({ exclusiveMinimum: 0, maximum: 1_000 }),
+          generationOutputUsdPerMillionTokens: Type.Number({ exclusiveMinimum: 0, maximum: 1_000 }),
+          evaluatorInputUsdPerMillionTokens: Type.Number({ exclusiveMinimum: 0, maximum: 1_000 }),
+          evaluatorOutputUsdPerMillionTokens: Type.Number({ exclusiveMinimum: 0, maximum: 1_000 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -510,6 +526,13 @@ export const ExperimentRunSummarySchema = Type.Object(
 export const ExperimentDetailSchema = Type.Object(
   {
     experiment: ExperimentSchema,
+    costBudget: Type.Union([
+      Type.Object(
+        { maxUsd: Type.Number({ minimum: 0 }), reservedUsd: Type.Number({ minimum: 0 }) },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
     promptVersions: Type.Array(ExperimentPromptVersionSchema, { minItems: 1, maxItems: 20 }),
     progress: ExperimentProgressSchema,
     runs: Type.Array(ExperimentRunSummarySchema, { maxItems: 100 }),

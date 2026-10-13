@@ -94,4 +94,36 @@ describe("experiment start planning", () => {
     expect(() => assertCaseBudget(100, 51)).toThrow();
     expect(() => assertCaseBudget(1, 0)).toThrow();
   });
+
+  it("validates explicit USD budget and all model prices", () => {
+    const start = {
+      projectId: input.projectId,
+      experimentId: "c373156d-03a8-4537-995e-183b388d2bb4",
+      provider: "openai-compatible" as const,
+      model: "chat-model",
+    };
+    const costBudget = {
+      maxUsd: 1.25,
+      generationInputUsdPerMillionTokens: 0.5,
+      generationOutputUsdPerMillionTokens: 2,
+      evaluatorInputUsdPerMillionTokens: 1,
+      evaluatorOutputUsdPerMillionTokens: 3,
+    };
+    expect(normalizeStartExperiment({ ...start, costBudget })).toMatchObject({
+      costBudgetUsd: 1.25,
+      costPricing: { evaluatorOutputUsdPerMillionTokens: 3 },
+    });
+    expect(() =>
+      normalizeStartExperiment({ ...start, costBudget: { ...costBudget, maxUsd: 0.001 } }),
+    ).toThrow();
+    expect(() =>
+      normalizeStartExperiment({ ...start, costBudget: { ...costBudget, maxUsd: 1.234 } }),
+    ).toThrow();
+    expect(() =>
+      normalizeStartExperiment({
+        ...start,
+        costBudget: { ...costBudget, generationInputUsdPerMillionTokens: 0 },
+      }),
+    ).toThrow();
+  });
 });

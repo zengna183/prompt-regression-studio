@@ -26,6 +26,7 @@ export async function evaluateGeneratedOutput(
   const response = await input.complete({
     model: input.evaluatorModel,
     temperature: 0,
+    maxTokens: 8192,
     ...(input.seed === undefined ? {} : { seed: input.seed }),
     messages: [
       {

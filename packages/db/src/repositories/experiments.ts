@@ -52,6 +52,7 @@ export interface ExperimentRepository {
     experimentId: string,
   ): Promise<ExperimentComparisonRecord | null>;
   start(input: StartExperimentInput): Promise<StartedExperiment>;
+  cancel(projectId: string, experimentId: string): Promise<typeof experiments.$inferSelect>;
 }
 
 export interface ExperimentDetailRecord {
@@ -117,6 +118,13 @@ export interface StartExperimentInput {
     readonly maxTokens?: number;
   };
   readonly evaluatorModel?: string;
+  readonly costBudget?: {
+    readonly maxUsd: number;
+    readonly generationInputUsdPerMillionTokens: number;
+    readonly generationOutputUsdPerMillionTokens: number;
+    readonly evaluatorInputUsdPerMillionTokens: number;
+    readonly evaluatorOutputUsdPerMillionTokens: number;
+  };
 }
 
 export interface StartedExperiment {
@@ -132,7 +140,14 @@ const MAX_CASE_EXECUTIONS = 5_000;
  * published and belong to the same project, so an experiment cannot silently
  * mix unrelated tests, rubrics, or Prompts.
  */
-export function createExperimentRepository(db: RepositoryDatabase): ExperimentRepository {
+export function createExperimentRepository(
+  db: RepositoryDatabase,
+  options: { readonly maxActiveExperimentsPerProject?: number } = {},
+): ExperimentRepository {
+  const maxActive = options.maxActiveExperimentsPerProject ?? 4;
+  if (!Number.isSafeInteger(maxActive) || maxActive < 1 || maxActive > 100) {
+    throw new TypeError("maxActiveExperimentsPerProject must be between 1 and 100");
+  }
   return {
     async create(input) {
       const normalized = normalizeCreateExperiment(input);
@@ -423,6 +438,15 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
     async start(input) {
       const config = normalizeStartExperiment(input);
       return db.transaction(async (tx) => {
+        // All starters of one project take the same row lock before counting active
+        // experiments, so separate API replicas cannot bypass the admission cap.
+        const [project] = await tx
+          .select({ id: projects.id })
+          .from(projects)
+          .where(eq(projects.id, input.projectId))
+          .for("update")
+          .limit(1);
+        if (!project) throw new EntityNotFoundError("Project", input.projectId);
         const [experiment] = await tx
           .select()
           .from(experiments)
@@ -440,6 +464,15 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
         assertRunBudget(selectedPrompts.length, experiment.repetitions);
 
         if (experiment.status !== "draft") {
+          if (
+            stableStringify(experiment.costPricing) !== stableStringify(config.costPricing) ||
+            experiment.costBudgetUsd !== config.costBudgetUsd
+          ) {
+            throw new RepositoryConflictError(
+              "EXPERIMENT_ALREADY_STARTED",
+              "The experiment was already started with a different cost budget.",
+            );
+          }
           const existing = await tx
             .select({
               evaluationRunId: evaluationRuns.id,
@@ -482,6 +515,21 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
           selectedPrompts.length * experiment.repetitions,
           datasetSize?.caseCount ?? 0,
         );
+        const [active] = await tx
+          .select({ total: count() })
+          .from(experiments)
+          .where(
+            and(
+              eq(experiments.projectId, input.projectId),
+              inArray(experiments.status, ["queued", "running"]),
+            ),
+          );
+        if ((active?.total ?? 0) >= maxActive) {
+          throw new RepositoryConflictError(
+            "PROJECT_CONCURRENCY_LIMIT",
+            `This project already has ${maxActive} active experiments. Wait for one to finish or cancel it.`,
+          );
+        }
 
         const evaluationRunIds: string[] = [];
         for (const selectedPrompt of selectedPrompts) {
@@ -522,11 +570,62 @@ export function createExperimentRepository(db: RepositoryDatabase): ExperimentRe
           .values(evaluationRunIds.map((evaluationRunId) => ({ evaluationRunId })));
         const [queued] = await tx
           .update(experiments)
-          .set({ status: "queued", startedAt: new Date(), updatedAt: new Date() })
+          .set({
+            status: "queued",
+            costBudgetUsd: config.costBudgetUsd,
+            costPricing: config.costPricing,
+            startedAt: new Date(),
+            updatedAt: new Date(),
+          })
           .where(eq(experiments.id, experiment.id))
           .returning();
         if (!queued) throw new Error("PostgreSQL did not return the queued experiment");
         return { experiment: queued, evaluationRunIds };
+      });
+    },
+
+    async cancel(projectId, experimentId) {
+      return db.transaction(async (tx) => {
+        const [experiment] = await tx
+          .select()
+          .from(experiments)
+          .where(and(eq(experiments.id, experimentId), eq(experiments.projectId, projectId)))
+          .for("update")
+          .limit(1);
+        if (!experiment) throw new EntityNotFoundError("Experiment", experimentId);
+        if (experiment.status === "cancelled") return experiment;
+        if (experiment.status === "succeeded" || experiment.status === "failed") {
+          throw new RepositoryConflictError(
+            "EXPERIMENT_ALREADY_FINISHED",
+            "A completed experiment cannot be cancelled.",
+          );
+        }
+        const now = new Date();
+        await tx
+          .update(evaluationRuns)
+          .set({ status: "cancelled", completedAt: now })
+          .where(
+            and(
+              eq(evaluationRuns.experimentId, experimentId),
+              inArray(evaluationRuns.status, ["queued", "running"]),
+            ),
+          );
+        await tx
+          .update(generationRuns)
+          .set({ status: "cancelled", completedAt: now })
+          .where(
+            and(
+              eq(generationRuns.experimentId, experimentId),
+              inArray(generationRuns.status, ["queued", "running"]),
+            ),
+          );
+        const [cancelled] = await tx
+          .update(experiments)
+          .set({ status: "cancelled", completedAt: now, updatedAt: now })
+          .where(eq(experiments.id, experimentId))
+          .returning();
+        if (!cancelled) throw new Error("PostgreSQL did not return the cancelled experiment");
+        return cancelled;
       });
     },
   };
@@ -565,6 +664,34 @@ export function normalizeStartExperiment(input: StartExperimentInput) {
     throw new TypeError("evaluatorModel must be 1-240 characters");
   }
   const evaluatorConfig = { model: evaluatorModel };
+  const costBudget = input.costBudget;
+  if (costBudget !== undefined) {
+    const priceKeys = [
+      "generationInputUsdPerMillionTokens",
+      "generationOutputUsdPerMillionTokens",
+      "evaluatorInputUsdPerMillionTokens",
+      "evaluatorOutputUsdPerMillionTokens",
+    ] as const;
+    if (Object.keys(costBudget).sort().join(",") !== ["maxUsd", ...priceKeys].sort().join(",")) {
+      throw new TypeError("costBudget must include a limit and all four model prices");
+    }
+    if (
+      !Number.isFinite(costBudget.maxUsd) ||
+      costBudget.maxUsd < 0.01 ||
+      costBudget.maxUsd > 100_000 ||
+      Math.abs(costBudget.maxUsd * 100 - Math.round(costBudget.maxUsd * 100)) > 1e-6
+    ) {
+      throw new TypeError(
+        "costBudget.maxUsd must be between 0.01 and 100000 with at most two decimal places",
+      );
+    }
+    for (const key of priceKeys) {
+      const rate = costBudget[key];
+      if (!Number.isFinite(rate) || rate <= 0 || rate > 1_000) {
+        throw new TypeError(`costBudget.${key} must be a positive model price per million tokens`);
+      }
+    }
+  }
   return {
     provider: input.provider,
     model,
@@ -572,6 +699,16 @@ export function normalizeStartExperiment(input: StartExperimentInput) {
     modelConfigHash: hashVersionContent(modelConfig),
     evaluatorConfig,
     evaluatorConfigHash: hashVersionContent(evaluatorConfig),
+    costBudgetUsd: costBudget?.maxUsd ?? null,
+    costPricing:
+      costBudget === undefined
+        ? null
+        : {
+            generationInputUsdPerMillionTokens: costBudget.generationInputUsdPerMillionTokens,
+            generationOutputUsdPerMillionTokens: costBudget.generationOutputUsdPerMillionTokens,
+            evaluatorInputUsdPerMillionTokens: costBudget.evaluatorInputUsdPerMillionTokens,
+            evaluatorOutputUsdPerMillionTokens: costBudget.evaluatorOutputUsdPerMillionTokens,
+          },
   };
 }
 

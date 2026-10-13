@@ -129,6 +129,28 @@ export function experimentRoutes(
         return reply.code(202).send(await service.start(projectId, experimentId, request.body));
       },
     );
+    app.post(
+      "/v1/projects/:projectId/experiments/:experimentId/cancel",
+      {
+        config: { rateLimit: { max: 10, timeWindow: 60_000 } },
+        schema: {
+          tags: ["experiments"],
+          summary: "Cancel an active experiment and its unfinished runs",
+          params: ExperimentParams,
+          response: { 200: ExperimentSchema },
+        },
+      },
+      async (request) => {
+        if (!service) {
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment execution is not configured.",
+          );
+        }
+        return service.cancel(request.params.projectId, request.params.experimentId);
+      },
+    );
     return Promise.resolve();
   };
 }

@@ -69,6 +69,7 @@ const RawConfigSchema = z
     DIAGNOSIS_PYTHONPATH: z.string().min(1).optional(),
     DIAGNOSIS_TIMEOUT_MS: z.coerce.number().int().min(1).max(2_147_483_647).default(120_000),
     DIAGNOSIS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(128).default(2),
+    MAX_ACTIVE_EXPERIMENTS_PER_PROJECT: z.coerce.number().int().min(1).max(100).default(4),
     DATASET_GENERATION_MODEL: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z.string().min(1).max(240).optional(),

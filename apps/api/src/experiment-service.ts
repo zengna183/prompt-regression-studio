@@ -17,4 +17,5 @@ export interface ExperimentService {
     experimentId: string,
     input: StartExperiment,
   ): Promise<StartedExperiment>;
+  cancel(projectId: string, experimentId: string): Promise<Experiment>;
 }

@@ -39,8 +39,9 @@ function dto(experiment: {
 export function createDatabaseExperimentService(
   db: Database,
   notifier: ExperimentStartNotifier,
+  options: { readonly maxActiveExperimentsPerProject?: number } = {},
 ): ExperimentService {
-  const experiments = createExperimentRepository(db);
+  const experiments = createExperimentRepository(db, options);
   return {
     async list(projectId) {
       return (await experiments.listByProject(projectId)).map(dto);
@@ -94,6 +95,7 @@ export function createDatabaseExperimentService(
           model: input.model,
           ...(input.modelConfig === undefined ? {} : { modelConfig: input.modelConfig }),
           ...(input.evaluatorModel === undefined ? {} : { evaluatorModel: input.evaluatorModel }),
+          ...(input.costBudget === undefined ? {} : { costBudget: input.costBudget }),
         });
       } catch (error) {
         if (error instanceof EntityNotFoundError) {
@@ -120,12 +122,32 @@ export function createDatabaseExperimentService(
         evaluationRunIds: [...started.evaluationRunIds],
       };
     },
+    async cancel(projectId, experimentId) {
+      try {
+        return dto(await experiments.cancel(projectId, experimentId));
+      } catch (error) {
+        if (error instanceof EntityNotFoundError) {
+          throw new ApiError(404, "NOT_FOUND", error.message);
+        }
+        if (error instanceof RepositoryConflictError) {
+          throw new ApiError(409, error.code, error.message);
+        }
+        throw error;
+      }
+    },
   };
 }
 
 function detailDto(detail: ExperimentDetailRecord): ExperimentDetail {
   return {
     experiment: dto(detail.experiment),
+    costBudget:
+      detail.experiment.costBudgetUsd === null
+        ? null
+        : {
+            maxUsd: detail.experiment.costBudgetUsd,
+            reservedUsd: detail.experiment.costReservedUsd,
+          },
     promptVersions: detail.promptVersions.map((promptVersion) => ({ ...promptVersion })),
     progress: deriveExperimentProgress(detail),
     runs: detail.runs.map((run) => ({

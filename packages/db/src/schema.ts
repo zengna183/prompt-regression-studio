@@ -339,6 +339,16 @@ export const experiments = pgTable(
       .$type<Record<string, JsonValue>>()
       .notNull()
       .default(sql`'{}'::jsonb`),
+    costBudgetUsd: numeric("cost_budget_usd", { precision: 16, scale: 8, mode: "number" }),
+    costReservedUsd: numeric("cost_reserved_usd", { precision: 16, scale: 8, mode: "number" })
+      .notNull()
+      .default(0),
+    costPricing: jsonb("cost_pricing").$type<{
+      generationInputUsdPerMillionTokens: number;
+      generationOutputUsdPerMillionTokens: number;
+      evaluatorInputUsdPerMillionTokens: number;
+      evaluatorOutputUsdPerMillionTokens: number;
+    } | null>(),
     createdBy: varchar("created_by", { length: 255 }),
     failureCode: varchar("failure_code", { length: 120 }),
     failureMessage: text("failure_message"),
@@ -352,6 +362,15 @@ export const experiments = pgTable(
     index("experiments_dataset_version_idx").on(table.datasetVersionId),
     index("experiments_framework_version_idx").on(table.frameworkVersionId),
     check("experiments_repetitions_positive", sql`${table.repetitions} > 0`),
+    check(
+      "experiments_cost_budget_positive",
+      sql`${table.costBudgetUsd} is null or ${table.costBudgetUsd} > 0`,
+    ),
+    check("experiments_cost_reserved_nonnegative", sql`${table.costReservedUsd} >= 0`),
+    check(
+      "experiments_cost_reserved_within_budget",
+      sql`${table.costBudgetUsd} is null or ${table.costReservedUsd} <= ${table.costBudgetUsd}`,
+    ),
   ],
 );
 

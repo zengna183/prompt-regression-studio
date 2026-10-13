@@ -1,4 +1,5 @@
 import type { EvaluationRepository, JsonValue, SaveGenerationOutputInput } from "@ai-chat-eval/db";
+import { RepositoryConflictError } from "@ai-chat-eval/db";
 import {
   OpenAICompatibleClient,
   ProviderError,
@@ -28,7 +29,7 @@ export interface EvaluationExecutorOptions {
 }
 
 export interface EvaluationExecutionResult {
-  readonly status: "completed" | "already_claimed";
+  readonly status: "completed" | "already_claimed" | "cancelled";
   readonly succeededCount: number;
   readonly failedCount: number;
 }
@@ -68,7 +69,28 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
       if (!claimed) {
         return { status: "already_claimed", succeededCount: 0, failedCount: 0 };
       }
-      await options.repository.startGenerationRun(snapshot.generationRun.id);
+      const generationRun = await options.repository.startGenerationRun(snapshot.generationRun.id);
+      if (generationRun.status === "cancelled") {
+        return { status: "cancelled", succeededCount: 0, failedCount: 0 };
+      }
+      const cancellation = new AbortController();
+      let checkingCancellation = false;
+      const cancellationPoll = setInterval(() => {
+        if (checkingCancellation || cancellation.signal.aborted) return;
+        checkingCancellation = true;
+        void options.repository
+          .isCancelled(evaluationRunId)
+          .then((cancelled) => {
+            if (cancelled) cancellation.abort();
+          })
+          .catch((error: unknown) =>
+            logger.warn("Cancellation poll failed", { evaluationRunId, error }),
+          )
+          .finally(() => {
+            checkingCancellation = false;
+          });
+      }, 1_000);
+      cancellationPoll.unref?.();
 
       try {
         let succeededCount = 0;
@@ -81,6 +103,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
                 snapshot.generationRun.repetition,
               );
         for (const evaluationCase of snapshot.cases) {
+          await assertNotCancelled(options.repository, evaluationRunId, cancellation);
           const startedAt = Date.now();
           const messages: ChatMessage[] = [
             { role: "system", content: snapshot.promptVersion.compiledContent },
@@ -104,10 +127,22 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
                 messages,
                 ...(generationSeed === undefined ? {} : { seed: generationSeed }),
                 ...readModelConfig(snapshot.generationRun.modelConfig),
+                maxTokens: readModelConfig(snapshot.generationRun.modelConfig).maxTokens ?? 1024,
+                signal: cancellation.signal,
               },
               options.maxProviderAttempts ?? 3,
               options.retryDelayMs ?? 250,
+              () =>
+                reserveCall(
+                  options.repository,
+                  snapshot.experiment.costBudgetUsd,
+                  evaluationRunId,
+                  "generation",
+                  messages,
+                  readModelConfig(snapshot.generationRun.modelConfig).maxTokens ?? 1024,
+                ),
             );
+            await assertNotCancelled(options.repository, evaluationRunId, cancellation);
             const outputId = randomUUID();
             const output: SaveGenerationOutputInput = {
               id: outputId,
@@ -140,9 +175,18 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               complete: (request) =>
                 completeWithRetry(
                   client,
-                  request,
+                  { ...request, signal: cancellation.signal },
                   options.maxProviderAttempts ?? 3,
                   options.retryDelayMs ?? 250,
+                  () =>
+                    reserveCall(
+                      options.repository,
+                      snapshot.experiment.costBudgetUsd,
+                      evaluationRunId,
+                      "evaluator",
+                      request.messages,
+                      request.maxTokens ?? 8192,
+                    ),
                 ),
               evaluationRunId,
               generationOutputId: outputId,
@@ -160,9 +204,23 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
                     ),
                   }),
             });
+            await assertNotCancelled(options.repository, evaluationRunId, cancellation);
             await options.repository.saveGenerationOutputAndScores(output, scored.scores);
             succeededCount += 1;
           } catch (error) {
+            if (
+              cancellation.signal.aborted ||
+              error instanceof EvaluationCancelledError ||
+              (error instanceof ProviderError && error.code === "PROVIDER_CANCELLED")
+            ) {
+              throw new EvaluationCancelledError();
+            }
+            if (error instanceof RepositoryConflictError && error.code === "COST_BUDGET_EXCEEDED") {
+              throw error;
+            }
+            if (error instanceof RepositoryConflictError && error.code === "EXPERIMENT_STOPPED") {
+              throw error;
+            }
             const failure = normalizeFailure(error);
             await options.repository.saveGenerationOutput({
               generationRunId: snapshot.generationRun.id,
@@ -183,6 +241,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
           }
         }
 
+        await assertNotCancelled(options.repository, evaluationRunId, cancellation);
         await options.repository.completeGenerationRun(snapshot.generationRun.id, {
           succeededCount,
           failedCount,
@@ -193,20 +252,46 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
         });
         return { status: "completed", succeededCount, failedCount };
       } catch (error) {
+        if (error instanceof EvaluationCancelledError || cancellation.signal.aborted) {
+          return { status: "cancelled", succeededCount: 0, failedCount: 0 };
+        }
+        const failureCode =
+          error instanceof RepositoryConflictError && error.code === "COST_BUDGET_EXCEEDED"
+            ? "COST_BUDGET_EXCEEDED"
+            : "EVALUATION_EXECUTION_FAILED";
+        const failureMessage =
+          failureCode === "COST_BUDGET_EXCEEDED"
+            ? "The next model request would exceed the experiment's estimated USD budget."
+            : "The evaluation worker could not finish this run.";
         await Promise.allSettled([
           options.repository.failGenerationRun(snapshot.generationRun.id, {
-            code: "EVALUATION_EXECUTION_FAILED",
-            message: "The evaluation worker could not finish this run.",
+            code: failureCode,
+            message: failureMessage,
           }),
           options.repository.failEvaluationRun(evaluationRunId, {
-            code: "EVALUATION_EXECUTION_FAILED",
-            message: "The evaluation worker could not finish this run.",
+            code: failureCode,
+            message: failureMessage,
           }),
         ]);
         throw error;
+      } finally {
+        clearInterval(cancellationPoll);
       }
     },
   };
+}
+
+class EvaluationCancelledError extends Error {}
+
+async function assertNotCancelled(
+  repository: EvaluationRepository,
+  evaluationRunId: string,
+  controller: AbortController,
+): Promise<void> {
+  if (controller.signal.aborted || (await repository.isCancelled(evaluationRunId))) {
+    controller.abort();
+    throw new EvaluationCancelledError();
+  }
 }
 
 async function completeWithRetry(
@@ -214,10 +299,12 @@ async function completeWithRetry(
   request: Parameters<OpenAICompatibleClient["complete"]>[0],
   maxAttempts: number,
   retryDelayMs: number,
+  beforeAttempt?: () => Promise<void>,
 ) {
   const attempts = Number.isSafeInteger(maxAttempts) ? Math.max(1, Math.min(maxAttempts, 5)) : 3;
   const delay = Number.isFinite(retryDelayMs) ? Math.max(0, Math.min(retryDelayMs, 10_000)) : 250;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await beforeAttempt?.();
     try {
       return await client.complete(request);
     } catch (error) {
@@ -227,6 +314,23 @@ async function completeWithRetry(
     }
   }
   throw new Error("Provider retry loop exhausted");
+}
+
+async function reserveCall(
+  repository: EvaluationRepository,
+  maxBudgetUsd: number | null,
+  evaluationRunId: string,
+  phase: "generation" | "evaluator",
+  messages: readonly ChatMessage[],
+  maxOutputTokens: number,
+): Promise<void> {
+  if (maxBudgetUsd == null) return;
+  await repository.reserveModelCall({
+    evaluationRunId,
+    phase,
+    requestBytes: Buffer.byteLength(JSON.stringify(messages), "utf8"),
+    maxOutputTokens,
+  });
 }
 
 function readModelConfig(value: Record<string, JsonValue>): {

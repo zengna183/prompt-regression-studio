@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import type { Database } from "../client.js";
-import { evaluationRunDispatches, evaluationRuns, generationRuns } from "../schema.js";
+import { evaluationRunDispatches, evaluationRuns, experiments, generationRuns } from "../schema.js";
 import { synchronizeExperimentStatus } from "./evaluations.js";
 
 export interface ClaimedEvaluationDispatch {
@@ -42,8 +42,10 @@ export function createEvaluationDispatchRepository(db: Database): EvaluationDisp
         const rows = await tx
           .select({ evaluationRunId: evaluationRunDispatches.evaluationRunId })
           .from(evaluationRunDispatches)
+          .innerJoin(evaluationRuns, eq(evaluationRunDispatches.evaluationRunId, evaluationRuns.id))
           .where(
             and(
+              eq(evaluationRuns.status, "queued"),
               lte(evaluationRunDispatches.nextAttemptAt, now),
               or(
                 eq(evaluationRunDispatches.status, "pending"),
@@ -59,7 +61,7 @@ export function createEvaluationDispatchRepository(db: Database): EvaluationDisp
           )
           .orderBy(asc(evaluationRunDispatches.createdAt))
           .limit(limit)
-          .for("update", { skipLocked: true });
+          .for("update", { of: evaluationRunDispatches, skipLocked: true });
         const ids = rows.map((row) => row.evaluationRunId);
         if (ids.length === 0) return [];
         const claimed = await tx
@@ -108,6 +110,31 @@ export function createEvaluationDispatchRepository(db: Database): EvaluationDisp
       const delayMs = Math.min(60_000, 1_000 * 2 ** Math.max(0, claim.attempt - 1));
       const now = new Date();
       return db.transaction(async (tx) => {
+        const [candidate] = await tx
+          .select({ experimentId: evaluationRuns.experimentId })
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, claim.evaluationRunId))
+          .limit(1);
+        if (!candidate) return "settled";
+        const [experiment] = await tx
+          .select({ status: experiments.status })
+          .from(experiments)
+          .where(eq(experiments.id, candidate.experimentId))
+          .for("update")
+          .limit(1);
+        if (!experiment || experiment.status === "cancelled") {
+          await tx
+            .update(evaluationRunDispatches)
+            .set({ status: "dispatched", lockedAt: null, dispatchedAt: now, updatedAt: now })
+            .where(
+              and(
+                eq(evaluationRunDispatches.evaluationRunId, claim.evaluationRunId),
+                eq(evaluationRunDispatches.status, "dispatching"),
+                eq(evaluationRunDispatches.attemptCount, claim.attempt),
+              ),
+            );
+          return "settled";
+        }
         const [updated] = await tx
           .update(evaluationRunDispatches)
           .set({

@@ -1,7 +1,7 @@
 import { and, asc, eq, isNotNull, lt, or } from "drizzle-orm";
 
 import type { Database } from "../client.js";
-import { EntityNotFoundError } from "../errors.js";
+import { EntityNotFoundError, RepositoryConflictError } from "../errors.js";
 import {
   evaluationCases,
   evaluationFrameworkVersions,
@@ -67,6 +67,13 @@ export interface SaveScoreInput {
 
 export interface EvaluationRepository {
   getExecutionSnapshot(evaluationRunId: string): Promise<EvaluationExecutionSnapshot | null>;
+  isCancelled(evaluationRunId: string): Promise<boolean>;
+  reserveModelCall(input: {
+    readonly evaluationRunId: string;
+    readonly phase: "generation" | "evaluator";
+    readonly requestBytes: number;
+    readonly maxOutputTokens: number;
+  }): Promise<void>;
   claimEvaluation(
     evaluationRunId: string,
     options?: { readonly staleAfterMs?: number },
@@ -128,11 +135,105 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
       return { ...joined, cases };
     },
 
+    async isCancelled(evaluationRunId) {
+      const [run] = await db
+        .select({ status: evaluationRuns.status, experimentStatus: experiments.status })
+        .from(evaluationRuns)
+        .innerJoin(experiments, eq(evaluationRuns.experimentId, experiments.id))
+        .where(eq(evaluationRuns.id, evaluationRunId))
+        .limit(1);
+      if (!run) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+      return run.status === "cancelled" || run.experimentStatus === "cancelled";
+    },
+
+    async reserveModelCall(input) {
+      if (
+        !Number.isSafeInteger(input.requestBytes) ||
+        input.requestBytes < 0 ||
+        input.requestBytes > 10_000_000 ||
+        !Number.isSafeInteger(input.maxOutputTokens) ||
+        input.maxOutputTokens < 1 ||
+        input.maxOutputTokens > 8192
+      ) {
+        throw new TypeError("Model request size or output cap is invalid");
+      }
+      await db.transaction(async (tx) => {
+        const [run] = await tx
+          .select({ experimentId: evaluationRuns.experimentId })
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, input.evaluationRunId))
+          .limit(1);
+        if (!run) throw new EntityNotFoundError("EvaluationRun", input.evaluationRunId);
+        const [experiment] = await tx
+          .select({
+            id: experiments.id,
+            status: experiments.status,
+            costBudgetUsd: experiments.costBudgetUsd,
+            costReservedUsd: experiments.costReservedUsd,
+            costPricing: experiments.costPricing,
+          })
+          .from(experiments)
+          .where(eq(experiments.id, run.experimentId))
+          .for("update")
+          .limit(1);
+        if (!experiment) throw new EntityNotFoundError("Experiment", run.experimentId);
+        if (experiment.status !== "queued" && experiment.status !== "running") {
+          throw new RepositoryConflictError(
+            "EXPERIMENT_STOPPED",
+            "The experiment is no longer active.",
+          );
+        }
+        if (experiment.costBudgetUsd === null) return;
+        if (!experiment.costPricing) throw new Error("A budgeted experiment has no model pricing");
+        const prefix = input.phase === "generation" ? "generation" : "evaluator";
+        const inputRate = experiment.costPricing[`${prefix}InputUsdPerMillionTokens`];
+        const outputRate = experiment.costPricing[`${prefix}OutputUsdPerMillionTokens`];
+        // UTF-8 bytes plus framing allowance conservatively bound tokenized input.
+        // This is a provider-independent estimate, not a guarantee of their invoice.
+        const reservation = estimateCostReservationUsd(
+          input.requestBytes,
+          input.maxOutputTokens,
+          inputRate,
+          outputRate,
+        );
+        const next =
+          Math.round((experiment.costReservedUsd + reservation) * 100_000_000) / 100_000_000;
+        if (next > experiment.costBudgetUsd + 1e-9) {
+          throw new RepositoryConflictError(
+            "COST_BUDGET_EXCEEDED",
+            "The next model request would exceed the experiment's estimated USD budget.",
+          );
+        }
+        await tx
+          .update(experiments)
+          .set({ costReservedUsd: next, updatedAt: new Date() })
+          .where(eq(experiments.id, experiment.id));
+      });
+    },
+
     async claimEvaluation(evaluationRunId, options) {
       const staleAfterMs = normalizeStaleAfter(options?.staleAfterMs);
       const now = new Date();
       const staleBefore = new Date(now.getTime() - staleAfterMs);
       return db.transaction(async (tx) => {
+        const [candidate] = await tx
+          .select({ experimentId: evaluationRuns.experimentId })
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .limit(1);
+        if (!candidate) return null;
+        const [experiment] = await tx
+          .select({
+            id: experiments.id,
+            status: experiments.status,
+            startedAt: experiments.startedAt,
+          })
+          .from(experiments)
+          .where(eq(experiments.id, candidate.experimentId))
+          .for("update")
+          .limit(1);
+        if (!experiment) throw new EntityNotFoundError("Experiment", candidate.experimentId);
+        if (experiment.status !== "queued" && experiment.status !== "running") return null;
         const [claimed] = await tx
           .update(evaluationRuns)
           .set({ status: "running", startedAt: now })
@@ -151,16 +252,6 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
           )
           .returning();
         if (!claimed) return null;
-
-        const [experiment] = await tx
-          .select({ id: experiments.id, startedAt: experiments.startedAt })
-          .from(experiments)
-          .where(eq(experiments.id, claimed.experimentId))
-          .for("update")
-          .limit(1);
-        if (!experiment) {
-          throw new EntityNotFoundError("Experiment", claimed.experimentId);
-        }
 
         await tx
           .update(experiments)
@@ -181,10 +272,16 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
       const [started] = await db
         .update(generationRuns)
         .set({ status: "running", startedAt: new Date() })
-        .where(eq(generationRuns.id, generationRunId))
+        .where(and(eq(generationRuns.id, generationRunId), eq(generationRuns.status, "queued")))
         .returning();
-      if (!started) throw new EntityNotFoundError("GenerationRun", generationRunId);
-      return started;
+      if (started) return started;
+      const [existing] = await db
+        .select()
+        .from(generationRuns)
+        .where(eq(generationRuns.id, generationRunId))
+        .limit(1);
+      if (!existing) throw new EntityNotFoundError("GenerationRun", generationRunId);
+      return existing;
     },
 
     async saveGenerationOutput(input) {
@@ -289,10 +386,16 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
           failedCount: result.failedCount,
           completedAt: new Date(),
         })
-        .where(eq(generationRuns.id, generationRunId))
+        .where(and(eq(generationRuns.id, generationRunId), eq(generationRuns.status, "running")))
         .returning();
-      if (!completed) throw new EntityNotFoundError("GenerationRun", generationRunId);
-      return completed;
+      if (completed) return completed;
+      const [existing] = await db
+        .select()
+        .from(generationRuns)
+        .where(eq(generationRuns.id, generationRunId))
+        .limit(1);
+      if (!existing) throw new EntityNotFoundError("GenerationRun", generationRunId);
+      return existing;
     },
 
     async failGenerationRun(generationRunId, failure) {
@@ -304,16 +407,34 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
           failureMessage: failure.message.slice(0, 2_000),
           completedAt: new Date(),
         })
-        .where(eq(generationRuns.id, generationRunId))
+        .where(and(eq(generationRuns.id, generationRunId), eq(generationRuns.status, "running")))
         .returning();
-      if (!failed) throw new EntityNotFoundError("GenerationRun", generationRunId);
-      return failed;
+      if (failed) return failed;
+      const [existing] = await db
+        .select()
+        .from(generationRuns)
+        .where(eq(generationRuns.id, generationRunId))
+        .limit(1);
+      if (!existing) throw new EntityNotFoundError("GenerationRun", generationRunId);
+      return existing;
     },
 
     async completeEvaluationRun(evaluationRunId, result) {
       const status = result.failedCount === 0 ? "succeeded" : "partially_succeeded";
       const now = new Date();
       return db.transaction(async (tx) => {
+        const [candidate] = await tx
+          .select({ experimentId: evaluationRuns.experimentId })
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .limit(1);
+        if (!candidate) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+        await tx
+          .select({ id: experiments.id })
+          .from(experiments)
+          .where(eq(experiments.id, candidate.experimentId))
+          .for("update")
+          .limit(1);
         const [completed] = await tx
           .update(evaluationRuns)
           .set({
@@ -323,17 +444,37 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
             failedCount: result.failedCount,
             completedAt: now,
           })
-          .where(eq(evaluationRuns.id, evaluationRunId))
+          .where(and(eq(evaluationRuns.id, evaluationRunId), eq(evaluationRuns.status, "running")))
           .returning();
-        if (!completed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
-        await synchronizeExperimentStatus(tx, completed.experimentId, now);
-        return completed;
+        if (completed) {
+          await synchronizeExperimentStatus(tx, completed.experimentId, now);
+          return completed;
+        }
+        const [existing] = await tx
+          .select()
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .limit(1);
+        if (!existing) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+        return existing;
       });
     },
 
     async failEvaluationRun(evaluationRunId, failure) {
       const now = new Date();
       return db.transaction(async (tx) => {
+        const [candidate] = await tx
+          .select({ experimentId: evaluationRuns.experimentId })
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .limit(1);
+        if (!candidate) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+        await tx
+          .select({ id: experiments.id })
+          .from(experiments)
+          .where(eq(experiments.id, candidate.experimentId))
+          .for("update")
+          .limit(1);
         const [failed] = await tx
           .update(evaluationRuns)
           .set({
@@ -342,14 +483,51 @@ export function createEvaluationRepository(db: Database): EvaluationRepository {
             failureMessage: failure.message.slice(0, 2_000),
             completedAt: now,
           })
-          .where(eq(evaluationRuns.id, evaluationRunId))
+          .where(and(eq(evaluationRuns.id, evaluationRunId), eq(evaluationRuns.status, "running")))
           .returning();
-        if (!failed) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
-        await synchronizeExperimentStatus(tx, failed.experimentId, now);
-        return failed;
+        if (failed) {
+          await synchronizeExperimentStatus(tx, failed.experimentId, now);
+          return failed;
+        }
+        const [existing] = await tx
+          .select()
+          .from(evaluationRuns)
+          .where(eq(evaluationRuns.id, evaluationRunId))
+          .limit(1);
+        if (!existing) throw new EntityNotFoundError("EvaluationRun", evaluationRunId);
+        return existing;
       });
     },
   };
+}
+
+export function estimateCostReservationUsd(
+  requestBytes: number,
+  maxOutputTokens: number,
+  inputUsdPerMillionTokens: number,
+  outputUsdPerMillionTokens: number,
+): number {
+  if (
+    !Number.isSafeInteger(requestBytes) ||
+    requestBytes < 0 ||
+    !Number.isSafeInteger(maxOutputTokens) ||
+    maxOutputTokens < 1 ||
+    !Number.isFinite(inputUsdPerMillionTokens) ||
+    inputUsdPerMillionTokens <= 0 ||
+    !Number.isFinite(outputUsdPerMillionTokens) ||
+    outputUsdPerMillionTokens <= 0
+  ) {
+    throw new TypeError("Invalid model cost estimate input");
+  }
+  return Math.max(
+    0.00000001,
+    Math.ceil(
+      (((requestBytes + 512) * inputUsdPerMillionTokens +
+        maxOutputTokens * outputUsdPerMillionTokens) /
+        1_000_000) *
+        100_000_000,
+    ) / 100_000_000,
+  );
 }
 
 /**
@@ -375,12 +553,13 @@ export async function synchronizeExperimentStatus(
   now: Date,
 ): Promise<void> {
   const [experiment] = await tx
-    .select({ id: experiments.id, startedAt: experiments.startedAt })
+    .select({ id: experiments.id, status: experiments.status, startedAt: experiments.startedAt })
     .from(experiments)
     .where(eq(experiments.id, experimentId))
     .for("update")
     .limit(1);
   if (!experiment) throw new EntityNotFoundError("Experiment", experimentId);
+  if (experiment.status === "cancelled") return;
 
   const runs = await tx
     .select({ status: evaluationRuns.status })

@@ -16,6 +16,7 @@ export function createDatabaseEvaluationDispatcher(
     async dispatch(evaluationRunId) {
       const snapshot = await repository.getExecutionSnapshot(evaluationRunId);
       if (!snapshot) throw notFound("Evaluation run");
+      if (snapshot.evaluationRun.status !== "queued") return;
       await enqueueEvaluationRun(queue, evaluationRunId);
     },
   };
