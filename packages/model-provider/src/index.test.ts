@@ -45,6 +45,7 @@ describe("OpenAICompatibleClient", () => {
 
     expect(calledUrl).toBe("https://api.example.com/v1/chat/completions");
     expect(calledInit?.method).toBe("POST");
+    expect(calledInit?.redirect).toBe("error");
     expect(new Headers(calledInit?.headers).get("authorization")).toBe(`Bearer ${validKey}`);
     const requestBody = typeof calledInit?.body === "string" ? calledInit.body : "";
     expect(JSON.parse(requestBody)).toEqual(validRequest);
@@ -104,6 +105,9 @@ describe("OpenAICompatibleClient", () => {
     ["http://127.0.0.1:8080", false, false],
     ["https://localhost:8443", false, false],
     ["https://user:password@api.example.com", false, false],
+    ["https://[fd00::1234]", true, false],
+    ["https://[::ffff:127.0.0.1]", true, false],
+    ["https://service.internal", true, false],
   ] as const)("rejects unsafe provider URL %s", (baseUrl, production, allowPrivateNetwork) => {
     expect(
       () =>
@@ -184,5 +188,50 @@ describe("OpenAICompatibleClient", () => {
     ).rejects.toMatchObject({
       code: "PROVIDER_CANCELLED",
     });
+  });
+
+  it("requires an exact approved hostname for managed connections", () => {
+    expect(
+      () =>
+        new OpenAICompatibleClient({
+          baseUrl: "https://api.example.com.attacker.test",
+          apiKey: validKey,
+          allowedHosts: ["api.example.com"],
+        }),
+    ).toThrow(/not allowed/);
+    expect(
+      () =>
+        new OpenAICompatibleClient({
+          baseUrl: "https://api.example.com",
+          apiKey: validKey,
+          allowedHosts: [],
+        }),
+    ).toThrow(/not allowed/);
+  });
+
+  it("keeps the deadline active while reading a stalled response body", async () => {
+    const fetchImpl = vi.fn<typeof fetch>((_input, init) =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"choices":'));
+              init?.signal?.addEventListener(
+                "abort",
+                () => controller.error(new Error("aborted")),
+                { once: true },
+              );
+            },
+          }),
+        ),
+      ),
+    );
+    const client = new OpenAICompatibleClient({
+      baseUrl: "https://api.example.com",
+      apiKey: validKey,
+      timeoutMs: 1_000,
+      fetchImpl,
+    });
+    await expect(client.complete(validRequest)).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT" });
   });
 });

@@ -143,6 +143,12 @@ export function createAblationRepository(
           experimentId: source.id,
           provider: "openai-compatible",
           model: run.generation.model,
+          ...(run.generation.modelConnectionId === null
+            ? {}
+            : { modelConnectionId: run.generation.modelConnectionId }),
+          ...(run.evaluation.modelConnectionId === null
+            ? {}
+            : { evaluatorConnectionId: run.evaluation.modelConnectionId }),
           modelConfig: run.generation.modelConfig,
           evaluatorModel,
           ...(source.costBudgetUsd === null || source.costPricing === null
@@ -157,6 +163,8 @@ export function createAblationRepository(
               ({ generation, evaluation }) =>
                 generation.provider !== start.provider ||
                 generation.model !== start.model ||
+                generation.modelConnectionId !== start.modelConnectionId ||
+                evaluation.modelConnectionId !== start.evaluatorConnectionId ||
                 generation.modelConfigHash !== start.modelConfigHash ||
                 evaluation.evaluatorKey !== "llm-judge" ||
                 evaluation.evaluatorVersion !== "1" ||
@@ -222,6 +230,12 @@ export function createAblationRepository(
           experimentId: created.id,
           provider: start.provider,
           model: start.model,
+          ...(start.modelConnectionId === null
+            ? {}
+            : { modelConnectionId: start.modelConnectionId }),
+          ...(start.evaluatorConnectionId === null
+            ? {}
+            : { evaluatorConnectionId: start.evaluatorConnectionId }),
           modelConfig: start.modelConfig,
           evaluatorModel,
           ...(source.costBudgetUsd === null || source.costPricing === null

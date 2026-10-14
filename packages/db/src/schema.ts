@@ -124,6 +124,29 @@ export const projects = pgTable(
   ],
 );
 
+/** Credentials never leave the server; public APIs select explicit metadata columns. */
+export const modelConnections = pgTable(
+  "model_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    baseUrl: varchar("base_url", { length: 2048 }).notNull(),
+    allowedModels: jsonb("allowed_models").$type<string[]>().notNull(),
+    apiKeyCiphertext: text("api_key_ciphertext").notNull(),
+    supportsSeed: boolean("supports_seed").notNull().default(true),
+    disabledAt: timestamp("disabled_at", { withTimezone: true, mode: "date" }),
+    ...timestampColumns(),
+  },
+  (table) => [
+    uniqueIndex("model_connections_project_name_uq").on(table.projectId, table.name),
+    uniqueIndex("model_connections_project_id_uq").on(table.projectId, table.id),
+    index("model_connections_project_created_at_idx").on(table.projectId, table.createdAt),
+  ],
+);
+
 export const prompts = pgTable(
   "prompts",
   {
@@ -414,6 +437,9 @@ export const generationRuns = pgTable(
     status: runStatusEnum("status").notNull().default("queued"),
     provider: varchar("provider", { length: 120 }).notNull(),
     model: varchar("model", { length: 240 }).notNull(),
+    modelConnectionId: uuid("model_connection_id").references(() => modelConnections.id, {
+      onDelete: "restrict",
+    }),
     modelConfig: jsonb("model_config")
       .$type<Record<string, JsonValue>>()
       .notNull()
@@ -517,6 +543,9 @@ export const evaluationRuns = pgTable(
     status: runStatusEnum("status").notNull().default("queued"),
     evaluatorKey: varchar("evaluator_key", { length: 120 }).notNull(),
     evaluatorVersion: varchar("evaluator_version", { length: 120 }).notNull(),
+    modelConnectionId: uuid("model_connection_id").references(() => modelConnections.id, {
+      onDelete: "restrict",
+    }),
     evaluatorConfig: jsonb("evaluator_config")
       .$type<Record<string, JsonValue>>()
       .notNull()
@@ -914,6 +943,7 @@ export const scoresRelations = relations(scores, ({ one }) => ({
 }));
 
 export type Project = InferSelectModel<typeof projects>;
+export type ModelConnection = InferSelectModel<typeof modelConnections>;
 export type NewProject = InferInsertModel<typeof projects>;
 export type Prompt = InferSelectModel<typeof prompts>;
 export type NewPrompt = InferInsertModel<typeof prompts>;

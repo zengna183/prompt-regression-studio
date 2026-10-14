@@ -29,6 +29,8 @@ import { evaluationRoutes } from "./routes/evaluations.js";
 import { experimentRoutes } from "./routes/experiments.js";
 import type { AblationService } from "./ablation-service.js";
 import { ablationRoutes } from "./routes/ablations.js";
+import type { ModelConnectionService } from "./model-connection-service.js";
+import { modelConnectionRoutes } from "./routes/model-connections.js";
 
 export interface BuildAppOptions {
   catalog: CatalogService;
@@ -40,6 +42,7 @@ export interface BuildAppOptions {
   evaluationDispatcher?: EvaluationDispatcher;
   experimentService?: ExperimentService;
   ablationService?: AblationService;
+  modelConnectionService?: ModelConnectionService;
   maxConcurrentDiagnoses: number;
   readiness?: ReadinessCheck;
   webOrigin?: string;
@@ -224,6 +227,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(evaluationRoutes(options.evaluationDispatcher));
   await app.register(experimentRoutes(options.experimentService));
   await app.register(ablationRoutes(options.ablationService));
+  if (options.modelConnectionService)
+    await app.register(modelConnectionRoutes(options.modelConnectionService));
 
   return app;
 }

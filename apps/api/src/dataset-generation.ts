@@ -24,7 +24,7 @@ export interface DatasetCaseModel {
 }
 
 export interface DatasetCaseGenerator {
-  generate(input: GenerateDatasetCasesRequest): Promise<CreateDatasetVersion>;
+  generate(input: GenerateDatasetCasesRequest, datasetId?: string): Promise<CreateDatasetVersion>;
 }
 
 export function createDatasetCaseGenerator(
@@ -90,6 +90,7 @@ export function createDatasetCaseGenerator(
             generator: GENERATOR_VERSION,
             model: response.model,
             requestedModel: modelName,
+            ...(input.modelConnectionId ? { modelConnectionId: input.modelConnectionId } : {}),
             brief,
             requestedCount: input.count,
             requestHash,

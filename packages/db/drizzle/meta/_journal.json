@@ -43,6 +43,13 @@
       "when": 1791810519546,
       "tag": "0005_wonderful_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791902398345,
+      "tag": "0006_sudden_proteus",
+      "breakpoints": true
     }
   ]
 }

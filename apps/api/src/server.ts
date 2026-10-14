@@ -2,6 +2,9 @@ import {
   createDatabaseClient,
   createEvaluationDispatchRepository,
   createEvaluationRepository,
+  createDatasetRepository,
+  createModelConnectionRepository,
+  optionalModelEncryptionKey,
 } from "@ai-chat-eval/db";
 import { createEvaluationQueue } from "@ai-chat-eval/queue";
 import { PythonProcessDiagnosisEngine } from "@prompt-regression/diagnosis-engine";
@@ -21,10 +24,12 @@ import {
 import { createDatabaseExperimentService } from "./database-experiment-service.js";
 import { createDatabaseAblationService } from "./ablation-service.js";
 import { createDatasetCaseGenerator } from "./dataset-generation.js";
+import { createManagedDatasetCaseGenerator } from "./managed-dataset-generation.js";
+import { createModelConnectionService } from "./model-connection-service.js";
 
 const config = loadApiConfig();
 const datasetGenerationModel = config.DATASET_GENERATION_MODEL;
-const datasetCaseGenerator = datasetGenerationModel
+const legacyDatasetCaseGenerator = datasetGenerationModel
   ? createDatasetCaseGenerator(
       new OpenAICompatibleClient({
         baseUrl: process.env.MODEL_PROVIDER_BASE_URL?.trim() || "http://127.0.0.1:11434",
@@ -38,6 +43,33 @@ const datasetCaseGenerator = datasetGenerationModel
     )
   : undefined;
 const database = createDatabaseClient();
+const datasetRepository = createDatasetRepository(database.db);
+const encryptionKey = optionalModelEncryptionKey(config.MODEL_ENCRYPTION_KEY);
+const modelConnectionRepository = encryptionKey
+  ? createModelConnectionRepository(database.db, encryptionKey)
+  : undefined;
+const modelConnectionService = encryptionKey
+  ? createModelConnectionService(database.db, encryptionKey, {
+      production: config.NODE_ENV === "production",
+      allowedHosts: config.MODEL_PROVIDER_ALLOWED_HOSTS.split(",")
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
+      timeoutMs: config.MODEL_PROVIDER_TIMEOUT_MS,
+    })
+  : undefined;
+const datasetCaseGenerator =
+  legacyDatasetCaseGenerator || modelConnectionRepository
+    ? createManagedDatasetCaseGenerator({
+        datasets: datasetRepository,
+        ...(modelConnectionRepository ? { connections: modelConnectionRepository } : {}),
+        ...(legacyDatasetCaseGenerator ? { legacy: legacyDatasetCaseGenerator } : {}),
+        production: config.NODE_ENV === "production",
+        allowedHosts: config.MODEL_PROVIDER_ALLOWED_HOSTS.split(",")
+          .map((host) => host.trim().toLowerCase())
+          .filter(Boolean),
+        timeoutMs: config.MODEL_PROVIDER_TIMEOUT_MS,
+      })
+    : undefined;
 const evaluationQueue = createEvaluationQueue(config.REDIS_URL);
 const evaluationDispatcher = createDatabaseEvaluationDispatcher(
   createEvaluationRepository(database.db),
@@ -72,6 +104,7 @@ const app = await buildApp({
   ablationService: createDatabaseAblationService(database.db, evaluationOutboxNotifier, {
     maxActiveExperimentsPerProject: config.MAX_ACTIVE_EXPERIMENTS_PER_PROJECT,
   }),
+  ...(modelConnectionService ? { modelConnectionService } : {}),
   ...(config.API_AUTH_TOKEN === undefined ? {} : { authToken: config.API_AUTH_TOKEN }),
   bodyLimitBytes: config.API_BODY_LIMIT_BYTES,
   docsEnabled: config.API_DOCS_ENABLED,

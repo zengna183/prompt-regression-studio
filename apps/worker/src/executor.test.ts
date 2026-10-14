@@ -88,6 +88,115 @@ function createRepository(snapshot: EvaluationExecutionSnapshot): EvaluationRepo
 }
 
 describe("evaluation executor", () => {
+  it("refuses disabled managed connections without using the legacy credential", async () => {
+    const original = createSnapshot();
+    const repository = createRepository({
+      ...original,
+      generationRun: { ...original.generationRun, modelConnectionId: "disabled-connection" },
+    });
+    const fetchImpl = vi.fn<typeof fetch>();
+    const executor = createEvaluationExecutor({
+      repository,
+      baseUrl: "http://127.0.0.1:11434",
+      apiKey: "local-development-key",
+      production: true,
+      allowPrivateNetwork: false,
+      timeoutMs: 10_000,
+      resolveModelConnection: vi.fn(() => Promise.resolve(null)),
+      fetchImpl,
+    });
+    await expect(executor.execute("eval-run", logger)).rejects.toThrow(/unavailable/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(vi.mocked(repository, true).failEvaluationRun.mock.calls).toHaveLength(1);
+  });
+
+  it("uses separate project connections for generation and judgment", async () => {
+    const original = createSnapshot();
+    const snapshot: EvaluationExecutionSnapshot = {
+      ...original,
+      experiment: { ...original.experiment, projectId: "project-1" },
+      generationRun: { ...original.generationRun, modelConnectionId: "generation-connection" },
+      evaluationRun: {
+        ...original.evaluationRun,
+        modelConnectionId: "judge-connection",
+        evaluatorConfig: { model: "judge-model" },
+      },
+    };
+    const repository = createRepository(snapshot);
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    const fetchImpl = vi.fn<typeof fetch>((input, init) => {
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "") as { model: string };
+      calls.push({
+        url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        authorization: new Headers(init?.headers).get("authorization"),
+      });
+      const content =
+        body.model === "test-model"
+          ? "world"
+          : JSON.stringify({
+              scores: [
+                {
+                  metricKey: "quality",
+                  score: 1,
+                  rationale: "Useful answer.",
+                  evidence: ["world"],
+                  confidence: 0.9,
+                },
+              ],
+            });
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content } }],
+            model: body.model,
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+    const executor = createEvaluationExecutor({
+      repository,
+      baseUrl: "https://legacy.example.com",
+      apiKey: "legacy-test-key",
+      production: true,
+      allowPrivateNetwork: false,
+      timeoutMs: 10_000,
+      allowedProviderHosts: ["generation.example.com", "judge.example.com"],
+      fetchImpl,
+      resolveModelConnection: vi.fn((_projectId, id) =>
+        Promise.resolve(
+          id === "generation-connection"
+            ? {
+                baseUrl: "https://generation.example.com",
+                apiKey: "generation-test-key",
+                allowedModels: ["test-model"],
+                supportsSeed: true,
+              }
+            : {
+                baseUrl: "https://judge.example.com",
+                apiKey: "judge-test-key",
+                allowedModels: ["judge-model"],
+                supportsSeed: false,
+              },
+        ),
+      ),
+    });
+    await expect(executor.execute("eval-run", logger)).resolves.toMatchObject({
+      status: "completed",
+      succeededCount: 1,
+    });
+    expect(calls).toEqual([
+      {
+        url: "https://generation.example.com/v1/chat/completions",
+        authorization: "Bearer generation-test-key",
+      },
+      {
+        url: "https://judge.example.com/v1/chat/completions",
+        authorization: "Bearer judge-test-key",
+      },
+    ]);
+  });
+
   it("calls the model and persists a redacted, hashed output", async () => {
     const repository = createRepository(createSnapshot());
     const responses = [

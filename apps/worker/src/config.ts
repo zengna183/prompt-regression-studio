@@ -1,3 +1,5 @@
+import { optionalModelEncryptionKey } from "@ai-chat-eval/db";
+
 export interface WorkerConfig {
   redisUrl: string;
   modelProviderBaseUrl: string;
@@ -6,6 +8,7 @@ export interface WorkerConfig {
   modelProviderAllowPrivateNetwork: boolean;
   modelProviderTimeoutMs: number;
   modelProviderSupportsSeed: boolean;
+  allowedProviderHosts: string[];
   concurrency: number;
   healthHost: string;
   healthPort: number;
@@ -75,8 +78,12 @@ export function readWorkerConfig(environment: NodeJS.ProcessEnv = process.env): 
   const modelProviderBaseUrl =
     environment.MODEL_PROVIDER_BASE_URL?.trim() || "http://127.0.0.1:11434";
   const modelProviderApiKey = environment.MODEL_PROVIDER_API_KEY?.trim() || "local-development-key";
-  if (production && modelProviderApiKey === "local-development-key") {
-    throw new Error("MODEL_PROVIDER_API_KEY is required in production");
+  if (
+    production &&
+    modelProviderApiKey === "local-development-key" &&
+    !optionalModelEncryptionKey(environment.MODEL_ENCRYPTION_KEY)
+  ) {
+    throw new Error("MODEL_PROVIDER_API_KEY or MODEL_ENCRYPTION_KEY is required in production");
   }
 
   return {
@@ -96,6 +103,10 @@ export function readWorkerConfig(environment: NodeJS.ProcessEnv = process.env): 
       600_000,
     ),
     modelProviderSupportsSeed: readBoolean(environment, "MODEL_PROVIDER_SUPPORTS_SEED", true),
+    allowedProviderHosts: (environment.MODEL_PROVIDER_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
     concurrency: readPositiveInteger(environment, "WORKER_CONCURRENCY", 4, 128),
     healthHost: environment.WORKER_HEALTH_HOST?.trim() || "127.0.0.1",
     healthPort: readPort(environment, "WORKER_HEALTH_PORT", 4101),

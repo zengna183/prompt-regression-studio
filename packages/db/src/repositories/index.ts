@@ -6,6 +6,7 @@ export * from "./evaluations.js";
 export * from "./experiment-diagnoses.js";
 export * from "./experiments.js";
 export * from "./frameworks.js";
+export * from "./model-connections.js";
 export * from "./projects.js";
 export * from "./prompts.js";
 

@@ -26,6 +26,16 @@ export interface EvaluationExecutorOptions {
   /** Disable when the configured OpenAI-compatible endpoint rejects the seed field. */
   readonly supportsSeed?: boolean;
   readonly fetchImpl?: typeof fetch;
+  readonly allowedProviderHosts?: readonly string[];
+  readonly resolveModelConnection?: (
+    projectId: string,
+    connectionId: string,
+  ) => Promise<{
+    baseUrl: string;
+    apiKey: string;
+    allowedModels: string[];
+    supportsSeed: boolean;
+  } | null>;
 }
 
 export interface EvaluationExecutionResult {
@@ -42,15 +52,51 @@ export interface EvaluationExecutor {
   ): Promise<EvaluationExecutionResult>;
 }
 
+async function selectClient(
+  projectId: string,
+  connectionId: string | null | undefined,
+  model: string,
+  fallback: () => OpenAICompatibleClient,
+  options: EvaluationExecutorOptions,
+): Promise<{ client: OpenAICompatibleClient; supportsSeed: boolean }> {
+  if (!connectionId) return { client: fallback(), supportsSeed: options.supportsSeed ?? true };
+  const connection = await options.resolveModelConnection?.(projectId, connectionId);
+  if (!connection || !connection.allowedModels.includes(model)) {
+    throw new Error("The selected model connection is unavailable or does not allow this model.");
+  }
+  return {
+    client: new OpenAICompatibleClient({
+      baseUrl: connection.baseUrl,
+      apiKey: connection.apiKey,
+      production: options.production,
+      allowPrivateNetwork: options.allowPrivateNetwork,
+      ...(options.production ? { allowedHosts: options.allowedProviderHosts ?? [] } : {}),
+      timeoutMs: options.timeoutMs,
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    }),
+    supportsSeed: connection.supportsSeed,
+  };
+}
+
 export function createEvaluationExecutor(options: EvaluationExecutorOptions): EvaluationExecutor {
-  const client = new OpenAICompatibleClient({
-    baseUrl: options.baseUrl,
-    apiKey: options.apiKey,
-    production: options.production,
-    allowPrivateNetwork: options.allowPrivateNetwork,
-    timeoutMs: options.timeoutMs,
-    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
-  });
+  let legacyClient: OpenAICompatibleClient | undefined;
+  const client = () => {
+    if (options.production && options.apiKey === "local-development-key") {
+      throw new ProviderError(
+        "PROVIDER_INVALID_CONFIGURATION",
+        "Select a model connection or configure the legacy model provider.",
+      );
+    }
+    legacyClient ??= new OpenAICompatibleClient({
+      baseUrl: options.baseUrl,
+      apiKey: options.apiKey,
+      production: options.production,
+      allowPrivateNetwork: options.allowPrivateNetwork,
+      timeoutMs: options.timeoutMs,
+      ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    });
+    return legacyClient;
+  };
 
   return {
     async execute(evaluationRunId, logger, generationRunId) {
@@ -93,10 +139,54 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
       cancellationPoll.unref?.();
 
       try {
+        const generationProvider = await selectClient(
+          snapshot.experiment.projectId,
+          snapshot.generationRun.modelConnectionId,
+          snapshot.generationRun.model,
+          client,
+          options,
+        );
+        const evaluatorModelForConnection = readEvaluatorModel(
+          snapshot.evaluationRun.evaluatorConfig,
+          snapshot.generationRun.model,
+        );
+        const evaluatorProvider = await selectClient(
+          snapshot.experiment.projectId,
+          snapshot.evaluationRun.modelConnectionId,
+          evaluatorModelForConnection,
+          client,
+          options,
+        );
+        // Resolve again for every attempt so disabling or rotating a connection
+        // affects subsequent calls, including retries in a running experiment.
+        const generationClient = {
+          complete: async (request: Parameters<OpenAICompatibleClient["complete"]>[0]) =>
+            (
+              await selectClient(
+                snapshot.experiment.projectId,
+                snapshot.generationRun.modelConnectionId,
+                snapshot.generationRun.model,
+                client,
+                options,
+              )
+            ).client.complete(request),
+        };
+        const evaluatorClient = {
+          complete: async (request: Parameters<OpenAICompatibleClient["complete"]>[0]) =>
+            (
+              await selectClient(
+                snapshot.experiment.projectId,
+                snapshot.evaluationRun.modelConnectionId,
+                evaluatorModelForConnection,
+                client,
+                options,
+              )
+            ).client.complete(request),
+        };
         let succeededCount = 0;
         let failedCount = 0;
         const generationSeed =
-          options.supportsSeed === false
+          generationProvider.supportsSeed === false
             ? undefined
             : deriveGenerationSeed(
                 snapshot.experiment.randomSeed,
@@ -121,7 +211,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
           let response;
           try {
             response = await completeWithRetry(
-              client,
+              generationClient,
               {
                 model: snapshot.generationRun.model,
                 messages,
@@ -174,7 +264,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
             const scored = await evaluateGeneratedOutput({
               complete: (request) =>
                 completeWithRetry(
-                  client,
+                  evaluatorClient,
                   { ...request, signal: cancellation.signal },
                   options.maxProviderAttempts ?? 3,
                   options.retryDelayMs ?? 250,
@@ -194,7 +284,7 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
               framework: snapshot.frameworkVersion.definition,
               expectedOutput: evaluationCase.expectedOutput,
               outputText: response.text,
-              ...(options.supportsSeed === false
+              ...(evaluatorProvider.supportsSeed === false
                 ? {}
                 : {
                     seed: deriveEvaluationSeed(
@@ -295,7 +385,7 @@ async function assertNotCancelled(
 }
 
 async function completeWithRetry(
-  client: OpenAICompatibleClient,
+  client: Pick<OpenAICompatibleClient, "complete">,
   request: Parameters<OpenAICompatibleClient["complete"]>[0],
   maxAttempts: number,
   retryDelayMs: number,

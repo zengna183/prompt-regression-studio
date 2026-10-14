@@ -12,6 +12,7 @@ describe("readWorkerConfig", () => {
       modelProviderAllowPrivateNetwork: true,
       modelProviderTimeoutMs: 60_000,
       modelProviderSupportsSeed: true,
+      allowedProviderHosts: [],
       concurrency: 4,
       healthHost: "127.0.0.1",
       healthPort: 4101,

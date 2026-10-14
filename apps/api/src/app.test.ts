@@ -22,6 +22,7 @@ import type { CatalogService } from "./catalog-service.js";
 import type { DatasetService } from "./dataset-service.js";
 import type { ExperimentService } from "./experiment-service.js";
 import type { ExperimentDiagnosisSource } from "./experiment-diagnosis.js";
+import type { ModelConnectionService } from "./model-connection-service.js";
 import type {
   DiagnosisRunDetail,
   DiagnosisRunSummary,
@@ -83,6 +84,58 @@ class TestCatalog implements CatalogService {
 }
 
 describe("API", () => {
+  it("guards model connections and never serializes provider secrets", async () => {
+    const projectId = randomUUID();
+    const connectionId = randomUUID();
+    const now = new Date();
+    const row = {
+      id: connectionId,
+      projectId,
+      name: "Test",
+      baseUrl: "https://models.example.com",
+      allowedModels: ["test-model"],
+      supportsSeed: true,
+      disabledAt: null,
+      createdAt: now,
+      updatedAt: now,
+      apiKey: "must-not-leak-secret",
+    };
+    const service: ModelConnectionService = {
+      list: vi.fn(() => Promise.resolve([row])),
+      create: vi.fn(() => Promise.resolve(row)),
+      rotate: vi.fn(() => Promise.resolve(row)),
+      disable: vi.fn(() => Promise.resolve(row)),
+      test: vi.fn(() => Promise.resolve({ reachable: true, code: "OK" })),
+    };
+    const app = await buildTestApp(undefined, undefined, 2, undefined, {
+      authToken: "a".repeat(32),
+      modelConnectionService: service,
+    });
+    const url = `/v1/projects/${projectId}/model-connections`;
+    expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+    const headers = { authorization: `Bearer ${"a".repeat(32)}` };
+    const response = await app.inject({ method: "GET", url, headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).not.toContain("must-not-leak-secret");
+    expect(response.json()).toMatchObject([{ name: "Test", allowedModels: ["test-model"] }]);
+    const created = await app.inject({
+      method: "POST",
+      url,
+      headers,
+      payload: {
+        name: "Test",
+        baseUrl: "https://models.example.com",
+        allowedModels: ["test-model"],
+        apiKey: "must-not-leak-secret",
+        supportsSeed: true,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.body).not.toContain("must-not-leak-secret");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    await app.close();
+  });
+
   it("reports liveness", async () => {
     const app = await buildTestApp();
     const response = await app.inject({ method: "GET", url: "/health/live" });

@@ -300,6 +300,8 @@ export const GenerateDatasetCasesRequestSchema = Type.Object(
   {
     brief: Type.String({ minLength: 10, maxLength: 2000 }),
     count: Type.Integer({ minimum: 1, maximum: 10 }),
+    modelConnectionId: Type.Optional(UuidSchema),
+    model: Type.Optional(Type.String({ minLength: 1, maxLength: 240 })),
     parentVersionId: Type.Optional(UuidSchema),
   },
   { additionalProperties: false },
@@ -405,6 +407,8 @@ export const StartExperimentSchema = Type.Object(
   {
     provider: Type.Literal("openai-compatible"),
     model: Type.String({ minLength: 1, maxLength: 240 }),
+    modelConnectionId: Type.Optional(UuidSchema),
+    evaluatorConnectionId: Type.Optional(UuidSchema),
     modelConfig: Type.Optional(
       Type.Object(
         {

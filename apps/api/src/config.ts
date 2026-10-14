@@ -80,6 +80,11 @@ const RawConfigSchema = z
       (value) => (value === "" ? undefined : value),
       z.string().min(1).max(4096).optional(),
     ),
+    MODEL_ENCRYPTION_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().optional(),
+    ),
+    MODEL_PROVIDER_ALLOWED_HOSTS: z.string().default(""),
   })
   .superRefine((config, context) => {
     if (config.NODE_ENV === "production" && config.API_AUTH_TOKEN === undefined) {

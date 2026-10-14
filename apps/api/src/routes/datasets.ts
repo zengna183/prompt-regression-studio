@@ -207,7 +207,7 @@ export function datasetRoutes(
             "AI 用例生成尚未配置，请联系管理员设置生成模型。",
           );
         await datasetService.listVersions(request.params.datasetId);
-        const versionInput = await generator.generate(request.body);
+        const versionInput = await generator.generate(request.body, request.params.datasetId);
         return reply
           .code(201)
           .send(await datasetService.createVersion(request.params.datasetId, versionInput));

@@ -74,6 +74,7 @@ export interface NormalizedEvaluationCase {
 
 export interface DatasetRepository {
   create(input: CreateDatasetInput): Promise<Dataset>;
+  getById(id: string): Promise<Dataset | null>;
   listByProject(projectId: string): Promise<Dataset[]>;
   createVersion(datasetId: string, input: CreateDatasetVersionInput): Promise<DatasetVersion>;
   listVersions(datasetId: string): Promise<DatasetVersion[]>;
@@ -88,6 +89,10 @@ const datasetSources = new Set<DatasetSource>(["manual", "ai_generated", "import
 
 export function createDatasetRepository(db: RepositoryDatabase): DatasetRepository {
   return {
+    async getById(id) {
+      const [dataset] = await db.select().from(datasets).where(eq(datasets.id, id)).limit(1);
+      return dataset ?? null;
+    },
     async create(input) {
       try {
         const [created] = await db

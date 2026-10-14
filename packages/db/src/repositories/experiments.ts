@@ -14,6 +14,7 @@ import {
   experimentPromptVersions,
   experiments,
   generationRuns,
+  modelConnections,
   projects,
   prompts,
   promptVersions,
@@ -113,6 +114,8 @@ export interface StartExperimentInput {
   readonly experimentId: string;
   readonly provider: "openai-compatible";
   readonly model: string;
+  readonly modelConnectionId?: string;
+  readonly evaluatorConnectionId?: string;
   readonly modelConfig?: {
     readonly temperature?: number;
     readonly maxTokens?: number;
@@ -478,8 +481,10 @@ export function createExperimentRepository(
               evaluationRunId: evaluationRuns.id,
               provider: generationRuns.provider,
               model: generationRuns.model,
+              modelConnectionId: generationRuns.modelConnectionId,
               modelConfigHash: generationRuns.modelConfigHash,
               evaluatorConfigHash: evaluationRuns.evaluatorConfigHash,
+              evaluatorConnectionId: evaluationRuns.modelConnectionId,
             })
             .from(evaluationRuns)
             .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
@@ -490,6 +495,8 @@ export function createExperimentRepository(
               (run) =>
                 run.provider !== config.provider ||
                 run.model !== config.model ||
+                run.modelConnectionId !== config.modelConnectionId ||
+                run.evaluatorConnectionId !== config.evaluatorConnectionId ||
                 run.modelConfigHash !== config.modelConfigHash ||
                 run.evaluatorConfigHash !== config.evaluatorConfigHash,
             )
@@ -531,6 +538,32 @@ export function createExperimentRepository(
           );
         }
 
+        for (const [connectionId, model] of [
+          [config.modelConnectionId, config.model],
+          [config.evaluatorConnectionId, config.evaluatorConfig.model],
+        ] as const) {
+          if (!connectionId) continue;
+          const [connection] = await tx
+            .select({
+              allowedModels: modelConnections.allowedModels,
+              disabledAt: modelConnections.disabledAt,
+            })
+            .from(modelConnections)
+            .where(
+              and(
+                eq(modelConnections.id, connectionId),
+                eq(modelConnections.projectId, input.projectId),
+              ),
+            )
+            .limit(1);
+          if (!connection || connection.disabledAt || !connection.allowedModels.includes(model)) {
+            throw new RepositoryConflictError(
+              "MODEL_CONNECTION_UNAVAILABLE",
+              "The selected model connection is unavailable or does not allow this model.",
+            );
+          }
+        }
+
         const evaluationRunIds: string[] = [];
         for (const selectedPrompt of selectedPrompts) {
           for (let repetition = 1; repetition <= experiment.repetitions; repetition += 1) {
@@ -541,6 +574,7 @@ export function createExperimentRepository(
                 promptVersionId: selectedPrompt.promptVersionId,
                 provider: config.provider,
                 model: config.model,
+                modelConnectionId: config.modelConnectionId,
                 modelConfig: config.modelConfig,
                 modelConfigHash: config.modelConfigHash,
                 repetition,
@@ -556,6 +590,7 @@ export function createExperimentRepository(
                 frameworkVersionId: experiment.frameworkVersionId,
                 evaluatorKey: "llm-judge",
                 evaluatorVersion: "1",
+                modelConnectionId: config.evaluatorConnectionId,
                 evaluatorConfig: config.evaluatorConfig,
                 evaluatorConfigHash: config.evaluatorConfigHash,
                 idempotencyKey: `evaluation:${generationRun.id}:${experiment.frameworkVersionId}`,
@@ -695,6 +730,8 @@ export function normalizeStartExperiment(input: StartExperimentInput) {
   return {
     provider: input.provider,
     model,
+    modelConnectionId: input.modelConnectionId ?? null,
+    evaluatorConnectionId: input.evaluatorConnectionId ?? input.modelConnectionId ?? null,
     modelConfig,
     modelConfigHash: hashVersionContent(modelConfig),
     evaluatorConfig,

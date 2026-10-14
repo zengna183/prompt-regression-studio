@@ -3,7 +3,12 @@ import {
   EVALUATION_QUEUE_NAME,
   type EvaluationJob,
 } from "@ai-chat-eval/queue";
-import { createDatabaseClient, createEvaluationRepository } from "@ai-chat-eval/db";
+import {
+  createDatabaseClient,
+  createEvaluationRepository,
+  createModelConnectionRepository,
+  optionalModelEncryptionKey,
+} from "@ai-chat-eval/db";
 import { Worker } from "bullmq";
 import type { Server } from "node:http";
 
@@ -18,6 +23,10 @@ async function main(): Promise<void> {
   const logger = createLogger(config.logLevel);
   const database = createDatabaseClient();
   const repository = createEvaluationRepository(database.db);
+  const encryptionKey = optionalModelEncryptionKey(process.env.MODEL_ENCRYPTION_KEY);
+  const modelConnections = encryptionKey
+    ? createModelConnectionRepository(database.db, encryptionKey)
+    : undefined;
   const executor = createEvaluationExecutor({
     repository,
     baseUrl: config.modelProviderBaseUrl,
@@ -26,6 +35,13 @@ async function main(): Promise<void> {
     allowPrivateNetwork: config.modelProviderAllowPrivateNetwork,
     timeoutMs: config.modelProviderTimeoutMs,
     supportsSeed: config.modelProviderSupportsSeed,
+    allowedProviderHosts: config.allowedProviderHosts,
+    ...(modelConnections === undefined
+      ? {}
+      : {
+          resolveModelConnection: (projectId: string, connectionId: string) =>
+            modelConnections.resolve(projectId, connectionId),
+        }),
   });
   const redis = createRedisConnection(config.redisUrl);
   let ready = false;

@@ -24,6 +24,7 @@ import { hashVersionContent } from "../versioning.js";
 import { createEvaluationRepository } from "./evaluations.js";
 import { createExperimentRepository } from "./experiments.js";
 import { createPromptRepository } from "./prompts.js";
+import { createModelConnectionRepository } from "./model-connections.js";
 
 // These tests only run against an explicitly supplied disposable PostgreSQL database.
 describe.skipIf(!process.env.TEST_DATABASE_URL)("experiment execution controls", () => {
@@ -205,6 +206,66 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("experiment execution controls",
         .from(experiments)
         .where(eq(experiments.id, first.id));
       expect(experiment?.costReservedUsd).toBe(0.005512);
+    });
+  });
+
+  it("pins project-scoped encrypted model connections to both runs", async () => {
+    await isolated(async ({ projectId, first, repository }) => {
+      const connections = createModelConnectionRepository(client.db, Buffer.alloc(32, 7));
+      const generation = await connections.create({
+        projectId,
+        name: "Generator",
+        baseUrl: "https://models.example.com",
+        allowedModels: ["generator-model"],
+        apiKey: "generator-secret-key",
+        supportsSeed: true,
+      });
+      const judge = await connections.create({
+        projectId,
+        name: "Judge",
+        baseUrl: "https://judge.example.com",
+        allowedModels: ["judge-model"],
+        apiKey: "judge-secret-key",
+        supportsSeed: false,
+      });
+      expect(JSON.stringify(generation)).not.toContain("generator-secret-key");
+      expect((await connections.resolve(projectId, generation.id))?.apiKey).toBe(
+        "generator-secret-key",
+      );
+      expect(await connections.resolve(randomUUID(), generation.id)).toBeNull();
+      await expect(
+        repository.start({
+          projectId,
+          experimentId: first.id,
+          provider: "openai-compatible",
+          model: "wrong-model",
+          modelConnectionId: generation.id,
+        }),
+      ).rejects.toMatchObject({ code: "MODEL_CONNECTION_UNAVAILABLE" });
+      const started = await repository.start({
+        projectId,
+        experimentId: first.id,
+        provider: "openai-compatible",
+        model: "generator-model",
+        modelConnectionId: generation.id,
+        evaluatorModel: "judge-model",
+        evaluatorConnectionId: judge.id,
+      });
+      const [run] = await client.db
+        .select({
+          generationConnectionId: generationRuns.modelConnectionId,
+          judgeConnectionId: evaluationRuns.modelConnectionId,
+        })
+        .from(evaluationRuns)
+        .innerJoin(generationRuns, eq(evaluationRuns.generationRunId, generationRuns.id))
+        .where(eq(evaluationRuns.id, started.evaluationRunIds[0]!));
+      expect(run).toEqual({ generationConnectionId: generation.id, judgeConnectionId: judge.id });
+      await connections.disable(projectId, generation.id);
+      expect(await connections.resolve(projectId, generation.id)).toBeNull();
+      expect((await connections.rotate(projectId, judge.id, "rotated-judge-key")).id).toBe(
+        judge.id,
+      );
+      expect((await connections.resolve(projectId, judge.id))?.apiKey).toBe("rotated-judge-key");
     });
   });
 });

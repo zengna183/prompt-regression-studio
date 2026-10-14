@@ -81,7 +81,7 @@ describe("AI dataset generation HTTP workflow", () => {
     expect(result.json()).toMatchObject({ status: "draft", source: "ai_generated" });
     expect(result.headers["cache-control"]).toBe("no-store");
     expect(listVersions).toHaveBeenCalledWith(datasetId);
-    expect(generate).toHaveBeenCalledWith({ brief, count: 1 });
+    expect(generate).toHaveBeenCalledWith({ brief, count: 1 }, datasetId);
     expect(createVersion).toHaveBeenCalledWith(
       datasetId,
       expect.objectContaining({ source: "ai_generated" }),

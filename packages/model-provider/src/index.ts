@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export type ChatRole = "system" | "user" | "assistant";
 
 export interface ChatMessage {
@@ -64,6 +66,8 @@ export interface OpenAICompatibleClientOptions {
   readonly defaultModel?: string;
   readonly production?: boolean;
   readonly allowPrivateNetwork?: boolean;
+  /** When supplied, only these administrator-approved exact hostnames may be called. */
+  readonly allowedHosts?: readonly string[];
   readonly timeoutMs?: number;
   readonly maxRequestBytes?: number;
   readonly maxResponseBytes?: number;
@@ -122,6 +126,8 @@ export class OpenAICompatibleClient {
     try {
       response = await this.#options.fetchImpl(this.#options.endpoint, {
         method: "POST",
+        // Never forward a bearer credential to a provider-controlled redirect.
+        redirect: "error",
         headers: {
           accept: "application/json",
           "content-type": "application/json",
@@ -150,17 +156,25 @@ export class OpenAICompatibleClient {
       );
     }
 
-    clearTimeout(timeout);
-    request.signal?.removeEventListener("abort", abortFromCaller);
-    if (request.signal?.aborted === true) {
-      throw new ProviderError("PROVIDER_CANCELLED", "The model request was cancelled.");
+    let responseText: string;
+    try {
+      responseText = await readResponseText(response, this.#options.maxResponseBytes);
+      if (controller.signal.aborted) throw new Error("aborted");
+    } catch (error) {
+      if (request.signal?.aborted === true) {
+        throw new ProviderError("PROVIDER_CANCELLED", "The model request was cancelled.");
+      }
+      if (controller.signal.aborted) {
+        throw new ProviderError("PROVIDER_TIMEOUT", "The model request timed out.", {
+          retryable: true,
+        });
+      }
+      throw error;
+    } finally {
+      // The deadline covers body consumption, not only receipt of HTTP headers.
+      clearTimeout(timeout);
+      request.signal?.removeEventListener("abort", abortFromCaller);
     }
-    if (controller.signal.aborted) {
-      throw new ProviderError("PROVIDER_TIMEOUT", "The model request timed out.", {
-        retryable: true,
-      });
-    }
-    const responseText = await readResponseText(response, this.#options.maxResponseBytes);
     if (!response.ok) throw providerResponseError(response.status, responseText);
 
     let payload: unknown;
@@ -182,6 +196,15 @@ function resolveOptions(options: OpenAICompatibleClientOptions): ResolvedOptions
     options.production ?? false,
     options.allowPrivateNetwork ?? false,
   );
+  if (
+    options.allowedHosts !== undefined &&
+    !options.allowedHosts.includes(endpoint.hostname.toLowerCase())
+  ) {
+    throw new ProviderError(
+      "PROVIDER_INVALID_CONFIGURATION",
+      "The model provider host is not allowed by this deployment.",
+    );
+  }
   if (!isNonEmptySecret(options.apiKey, 8, 512)) {
     throw new ProviderError(
       "PROVIDER_INVALID_CONFIGURATION",
@@ -256,6 +279,11 @@ function parseProviderUrl(raw: string, production: boolean, allowPrivateNetwork:
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (privateHostnames.has(host)) return true;
+  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost"))
+    return true;
+  // Direct IPv6 literals are not supported for remote providers: link-local,
+  // unique-local and mapped addresses have too many bypass representations.
+  if (isIP(host) === 6) return true;
   if (host === "::1" || host === "0.0.0.0" || host === "127.0.0.1") return true;
   const octets = host.split(".").map(Number);
   if (

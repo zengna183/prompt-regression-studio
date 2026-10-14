@@ -93,6 +93,12 @@ export function createDatabaseExperimentService(
           experimentId,
           provider: input.provider,
           model: input.model,
+          ...(input.modelConnectionId === undefined
+            ? {}
+            : { modelConnectionId: input.modelConnectionId }),
+          ...(input.evaluatorConnectionId === undefined
+            ? {}
+            : { evaluatorConnectionId: input.evaluatorConnectionId }),
           ...(input.modelConfig === undefined ? {} : { modelConfig: input.modelConfig }),
           ...(input.evaluatorModel === undefined ? {} : { evaluatorModel: input.evaluatorModel }),
           ...(input.costBudget === undefined ? {} : { costBudget: input.costBudget }),
