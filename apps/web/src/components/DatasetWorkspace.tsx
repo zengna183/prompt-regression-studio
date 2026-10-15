@@ -5,6 +5,7 @@ import { api, getErrorMessage } from "../api/client";
 import { DatasetImport } from "./DatasetImport";
 import { DatasetGeneration } from "./DatasetGeneration";
 import { DatasetReview } from "./DatasetReview";
+import { ManualDatasetCases } from "./ManualDatasetCases";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
 
 export function DatasetWorkspace({ project }: { project: Project }) {
@@ -43,7 +44,10 @@ export function DatasetWorkspace({ project }: { project: Project }) {
     setCreating(true);
     setError(null);
     try {
-      const created = await api.createDataset(project.id, { key: key.trim(), name: name.trim() });
+      const created = await api.createDataset(project.id, {
+        key: key.trim() || `dataset-${crypto.randomUUID()}`,
+        name: name.trim(),
+      });
       setDatasets((current) => [...current, created]);
       setSelectedId(created.id);
       setName("");
@@ -85,10 +89,9 @@ export function DatasetWorkspace({ project }: { project: Project }) {
               />
             </label>
             <label htmlFor={`${id}-key`}>
-              英文标识
+              英文标识（可选，留空自动生成）
               <input
                 id={`${id}-key`}
-                required
                 minLength={2}
                 maxLength={64}
                 pattern="[a-z0-9]+(-[a-z0-9]+)*"
@@ -111,7 +114,7 @@ export function DatasetWorkspace({ project }: { project: Project }) {
           ) : (
             <>
               <label htmlFor={`${id}-dataset`}>
-                导入到哪个评测集？
+                当前评测集
                 <select
                   id={`${id}-dataset`}
                   value={selectedId}
@@ -124,7 +127,13 @@ export function DatasetWorkspace({ project }: { project: Project }) {
                   ))}
                 </select>
               </label>
-              {selectedId ? <DatasetImportPanel key={selectedId} datasetId={selectedId} /> : null}
+              {selectedId ? (
+                <DatasetImportPanel
+                  key={selectedId}
+                  projectId={project.id}
+                  datasetId={selectedId}
+                />
+              ) : null}
             </>
           )}
         </>
@@ -132,7 +141,7 @@ export function DatasetWorkspace({ project }: { project: Project }) {
     </main>
   );
 }
-function DatasetImportPanel({ datasetId }: { datasetId: string }) {
+function DatasetImportPanel({ datasetId, projectId }: { datasetId: string; projectId: string }) {
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +167,14 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
   const selectedVersion = versions.find((version) => version.id === openVersionId);
   return (
     <>
+      <ManualDatasetCases
+        datasetId={datasetId}
+        onSaved={(version) => {
+          setVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
+          setOpenVersionId(version.id);
+          setReload((value) => value + 1);
+        }}
+      />
       <DatasetImport
         datasetId={datasetId}
         onSaved={(version) => {
@@ -167,6 +184,7 @@ function DatasetImportPanel({ datasetId }: { datasetId: string }) {
       />
       <DatasetGeneration
         datasetId={datasetId}
+        projectId={projectId}
         onSaved={(version) => {
           setVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
           setReload((value) => value + 1);

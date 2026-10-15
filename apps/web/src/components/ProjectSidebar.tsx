@@ -48,6 +48,30 @@ export function ProjectSidebar({
       </div>
 
       <nav className="primary-nav" aria-label="主要功能">
+        {(
+          [
+            { view: "home", title: "开始评测", help: "五步完成准备与运行", mark: "1" },
+            { view: "models", title: "模型连接", help: "配置服务与管理密钥", mark: "M" },
+            { view: "frameworks", title: "评判标准", help: "评分规则与版本管理", mark: "R" },
+            { view: "experiments", title: "实验与结果", help: "启动、比较与段落验证", mark: "E" },
+          ] as const
+        ).map((item) => (
+          <button
+            key={item.view}
+            className={
+              "primary-nav__item" + (activeView === item.view ? " primary-nav__item--active" : "")
+            }
+            type="button"
+            onClick={() => onNavigate(item.view)}
+            {...(activeView === item.view ? { "aria-current": "page" as const } : {})}
+          >
+            <span aria-hidden="true">{item.mark}</span>
+            <span>
+              <strong>{item.title}</strong>
+              <small>{item.help}</small>
+            </span>
+          </button>
+        ))}
         <button
           className={
             "primary-nav__item" + (activeView === "datasets" ? " primary-nav__item--active" : "")
@@ -72,7 +96,7 @@ export function ProjectSidebar({
         >
           <span aria-hidden="true">P</span>
           <span>
-            <strong>项目与 Prompt</strong>
+            <strong>Prompt 版本</strong>
             <small>管理版本和区段</small>
           </span>
         </button>
@@ -86,8 +110,8 @@ export function ProjectSidebar({
         >
           <span aria-hidden="true">D</span>
           <span>
-            <strong>回归诊断</strong>
-            <small>上传评测包并归因</small>
+            <strong>外部评测包诊断</strong>
+            <small>开发者导入与历史报告</small>
           </span>
         </button>
       </nav>

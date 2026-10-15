@@ -28,7 +28,7 @@ export function CreateProjectForm({ onSubmit, onCancel }: ProjectFormProps) {
     try {
       await onSubmit({
         name: name.trim(),
-        slug: slug.trim(),
+        slug: slug.trim() || `project-${crypto.randomUUID()}`,
         ...(description.trim() ? { description: description.trim() } : {}),
       });
     } catch (caught) {
@@ -52,7 +52,7 @@ export function CreateProjectForm({ onSubmit, onCancel }: ProjectFormProps) {
         required
         autoFocus
       />
-      <label htmlFor={`${formId}-project-slug`}>英文标识</label>
+      <label htmlFor={`${formId}-project-slug`}>英文标识（可选）</label>
       <input
         id={`${formId}-project-slug`}
         value={slug}
@@ -62,10 +62,9 @@ export function CreateProjectForm({ onSubmit, onCancel }: ProjectFormProps) {
         pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
         placeholder="customer-support"
         aria-describedby={`${formId}-project-slug-hint`}
-        required
       />
       <small id={`${formId}-project-slug-hint`}>
-        用于接口和链接，只能填写小写字母、数字与连字符。
+        留空自动生成。如需自定义，只能填写小写字母、数字与连字符。
       </small>
       <label htmlFor={`${formId}-project-description`}>说明（可选）</label>
       <textarea
@@ -113,7 +112,7 @@ export function CreatePromptForm({ onSubmit, onCancel }: PromptFormProps) {
     try {
       await onSubmit({
         name: name.trim(),
-        key: key.trim(),
+        key: key.trim() || `prompt-${crypto.randomUUID()}`,
         ...(description.trim() ? { description: description.trim() } : {}),
       });
     } catch (caught) {
@@ -154,7 +153,7 @@ export function CreatePromptForm({ onSubmit, onCancel }: PromptFormProps) {
           />
         </label>
         <label>
-          <span>英文标识</span>
+          <span>英文标识（可选，留空自动生成）</span>
           <input
             id={`${formId}-prompt-key`}
             value={key}
@@ -163,7 +162,6 @@ export function CreatePromptForm({ onSubmit, onCancel }: PromptFormProps) {
             maxLength={64}
             pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
             placeholder="after-sales-answer"
-            required
           />
         </label>
       </div>

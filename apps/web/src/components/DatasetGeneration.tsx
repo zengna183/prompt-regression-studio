@@ -3,12 +3,15 @@ import type { DatasetVersion, EvaluationCase } from "@ai-chat-eval/contracts";
 
 import { api, getErrorMessage } from "../api/client";
 import { summarizeImportValue } from "../lib/datasetImport";
+import { ModelPicker, useModelConnections, type ModelChoice } from "./ModelPicker";
 
 export function DatasetGeneration({
   datasetId,
+  projectId,
   onSaved,
 }: {
   datasetId: string;
+  projectId: string;
   onSaved: (version: DatasetVersion) => void;
 }) {
   const id = useId();
@@ -19,6 +22,12 @@ export function DatasetGeneration({
   const [saved, setSaved] = useState<DatasetVersion | null>(null);
   const [cases, setCases] = useState<EvaluationCase[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
+  const connections = useModelConnections(projectId);
+  const [choice, setChoice] = useState<ModelChoice>({ connectionId: "", model: "" });
+  const ready =
+    available === true &&
+    connections.data !== null &&
+    (connections.data.legacy || Boolean(choice.connectionId && choice.model));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -41,7 +50,13 @@ export function DatasetGeneration({
     setSaved(null);
     setCases([]);
     try {
-      const version = await api.generateDatasetCases(datasetId, { brief: brief.trim(), count });
+      const version = await api.generateDatasetCases(datasetId, {
+        brief: brief.trim(),
+        count,
+        ...(connections.data?.legacy
+          ? {}
+          : { modelConnectionId: choice.connectionId, model: choice.model }),
+      });
       setSaved(version);
       onSaved(version);
       try {
@@ -63,9 +78,27 @@ export function DatasetGeneration({
         描述要测试的对话场景。生成会调用后台配置的模型并保存为待审核草稿，不会自动发布或用于正式评测。
       </p>
       {available === false ? (
-        <p role="status">管理员尚未配置生成模型。设置 DATASET_GENERATION_MODEL 后即可使用。</p>
+        <p role="status">当前服务尚未启用 AI 用例生成，请联系管理员配置模型连接。</p>
       ) : null}
       <form onSubmit={(event) => void generate(event)}>
+        {connections.error && (
+          <p role="alert">
+            {connections.error}{" "}
+            <button type="button" onClick={connections.reload}>
+              重新加载模型
+            </button>
+          </p>
+        )}
+        {connections.data && !connections.data.legacy && (
+          <ModelPicker
+            label="生成候选用例的模型"
+            connections={connections.data.connections}
+            legacy={false}
+            value={choice}
+            onChange={setChoice}
+            disabled={busy}
+          />
+        )}
         <label htmlFor={`${id}-brief`}>
           评测场景与重点
           <textarea
@@ -101,7 +134,7 @@ export function DatasetGeneration({
           type="submit"
           disabled={
             busy ||
-            available !== true ||
+            !ready ||
             brief.trim().length < 10 ||
             !Number.isInteger(count) ||
             count < 1 ||

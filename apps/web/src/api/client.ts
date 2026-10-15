@@ -14,6 +14,18 @@ import type {
   Project,
   Prompt,
   PromptVersion,
+  EvaluationFramework,
+  FrameworkVersion,
+  CreateFramework,
+  CreateFrameworkVersion,
+  CreateDatasetVersion,
+  Experiment,
+  ExperimentDetail,
+  ExperimentComparison,
+  CreateExperiment,
+  StartExperiment,
+  StartedExperiment,
+  Ablation,
 } from "@ai-chat-eval/contracts";
 
 import type {
@@ -31,6 +43,38 @@ import { parseImportPreview } from "../lib/datasetImport";
 
 const configuredBaseUrl = import.meta.env.VITE_API_URL?.trim();
 const API_BASE_URL = (configuredBaseUrl || "http://localhost:4000").replace(/\/$/, "");
+
+// An administrator token is session-only. Never persist it or bake it into the bundle.
+let sessionToken = "";
+export function setApiToken(value: string) {
+  sessionToken = value.trim();
+}
+
+export interface ModelConnection {
+  id: string;
+  projectId: string;
+  name: string;
+  baseUrl: string;
+  allowedModels: string[];
+  supportsSeed: boolean;
+  disabledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface NewModelConnection {
+  name: string;
+  baseUrl: string;
+  allowedModels: string[];
+  apiKey: string;
+  supportsSeed: boolean;
+}
+const projectPath = (id: string) => `/v1/projects/${encodeURIComponent(id)}`;
+const experimentPath = (projectId: string, id: string) =>
+  `${projectPath(projectId)}/experiments/${encodeURIComponent(id)}`;
+const post = (body?: unknown): RequestInit => ({
+  method: "POST",
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
 
 interface ApiErrorBody {
   code?: unknown;
@@ -89,6 +133,7 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
   let response: Response;
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
+  if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
   if (init.body) {
     headers.set("Content-Type", "application/json");
   }
@@ -121,7 +166,21 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    return error.requestId ? `${error.message}（请求编号：${error.requestId}）` : error.message;
+    const hints: Record<string, string> = {
+      INVALID_MODEL_CONNECTION:
+        "模型连接配置无效。请检查地址、模型名称，以及管理员设置的供应商地址白名单。",
+    };
+    const message =
+      (error.code && hints[error.code]) ||
+      (
+        {
+          401: "访问凭证无效或已失效，请通过页面顶部重新设置。",
+          403: "当前访问凭证没有执行此操作的权限，请联系管理员。",
+          429: "请求过于频繁或当前任务已满，请稍后重试。",
+        } as Record<number, string>
+      )[error.status] ||
+      error.message;
+    return error.requestId ? `${message}（请求编号：${error.requestId}）` : message;
   }
   if (error instanceof Error) {
     return error.message;
@@ -163,6 +222,143 @@ export function getDiagnosisErrorMessage(error: unknown): string {
 }
 
 export const api = {
+  async listModelConnections(projectId: string, signal?: AbortSignal): Promise<ModelConnection[]> {
+    return unwrapList<ModelConnection>(
+      await request(`${projectPath(projectId)}/model-connections`, signal ? { signal } : {}),
+    );
+  },
+  async createModelConnection(
+    projectId: string,
+    input: NewModelConnection,
+  ): Promise<ModelConnection> {
+    return unwrapEntity<ModelConnection>(
+      await request(`${projectPath(projectId)}/model-connections`, post(input)),
+    );
+  },
+  async rotateModelKey(projectId: string, id: string, apiKey: string): Promise<ModelConnection> {
+    return unwrapEntity<ModelConnection>(
+      await request(
+        `${projectPath(projectId)}/model-connections/${encodeURIComponent(id)}/rotate`,
+        post({ apiKey }),
+      ),
+    );
+  },
+  async disableModelConnection(projectId: string, id: string): Promise<ModelConnection> {
+    return unwrapEntity<ModelConnection>(
+      await request(
+        `${projectPath(projectId)}/model-connections/${encodeURIComponent(id)}/disable`,
+        post(),
+      ),
+    );
+  },
+  async testModelConnection(
+    projectId: string,
+    id: string,
+  ): Promise<{ reachable: boolean; code: string }> {
+    return unwrapEntity(
+      await request(
+        `${projectPath(projectId)}/model-connections/${encodeURIComponent(id)}/test`,
+        post(),
+      ),
+    );
+  },
+  async listFrameworks(projectId: string, signal?: AbortSignal): Promise<EvaluationFramework[]> {
+    return unwrapList(
+      await request(`${projectPath(projectId)}/frameworks`, signal ? { signal } : {}),
+    );
+  },
+  async createFramework(projectId: string, input: CreateFramework): Promise<EvaluationFramework> {
+    return unwrapEntity(await request(`${projectPath(projectId)}/frameworks`, post(input)));
+  },
+  async listFrameworkVersions(id: string, signal?: AbortSignal): Promise<FrameworkVersion[]> {
+    return unwrapList(
+      await request(`/v1/frameworks/${encodeURIComponent(id)}/versions`, signal ? { signal } : {}),
+    );
+  },
+  async createFrameworkVersion(
+    id: string,
+    input: CreateFrameworkVersion,
+  ): Promise<FrameworkVersion> {
+    return unwrapEntity(
+      await request(`/v1/frameworks/${encodeURIComponent(id)}/versions`, post(input)),
+    );
+  },
+  async publishFrameworkVersion(id: string): Promise<FrameworkVersion> {
+    return unwrapEntity(
+      await request(`/v1/framework-versions/${encodeURIComponent(id)}/publish`, post()),
+    );
+  },
+  async createDatasetVersion(id: string, input: CreateDatasetVersion): Promise<DatasetVersion> {
+    return unwrapEntity(
+      await request(`/v1/datasets/${encodeURIComponent(id)}/versions`, post(input)),
+    );
+  },
+  async listExperiments(projectId: string, signal?: AbortSignal): Promise<Experiment[]> {
+    return unwrapList(
+      await request(`${projectPath(projectId)}/experiments`, signal ? { signal } : {}),
+    );
+  },
+  async createExperiment(projectId: string, input: CreateExperiment): Promise<Experiment> {
+    return unwrapEntity(await request(`${projectPath(projectId)}/experiments`, post(input)));
+  },
+  async getExperiment(
+    projectId: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ExperimentDetail> {
+    return unwrapEntity(await request(experimentPath(projectId, id), signal ? { signal } : {}));
+  },
+  async startExperiment(
+    projectId: string,
+    id: string,
+    input: StartExperiment,
+  ): Promise<StartedExperiment> {
+    return unwrapEntity(await request(`${experimentPath(projectId, id)}/start`, post(input)));
+  },
+  async cancelExperiment(projectId: string, id: string): Promise<Experiment> {
+    return unwrapEntity(await request(`${experimentPath(projectId, id)}/cancel`, post()));
+  },
+  async compareExperiment(
+    projectId: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ExperimentComparison> {
+    return unwrapEntity(
+      await request(`${experimentPath(projectId, id)}/comparison`, signal ? { signal } : {}),
+    );
+  },
+  async diagnoseExperiment(
+    projectId: string,
+    id: string,
+    candidatePromptVersionId: string,
+  ): Promise<DiagnosisReport> {
+    return parseDiagnosisReport(
+      unwrapEntity(
+        await request(
+          `${experimentPath(projectId, id)}/diagnoses`,
+          post({ candidatePromptVersionId, repetition: 1, includeAblations: true }),
+        ),
+      ),
+    );
+  },
+  async listAblations(projectId: string, id: string, signal?: AbortSignal): Promise<Ablation[]> {
+    return unwrapList(
+      await request(`${experimentPath(projectId, id)}/ablations`, signal ? { signal } : {}),
+    );
+  },
+  async createAblation(
+    projectId: string,
+    id: string,
+    candidatePromptVersionId: string,
+    blockId: string,
+  ): Promise<Ablation> {
+    return unwrapEntity(
+      await request(
+        `${experimentPath(projectId, id)}/ablations`,
+        post({ candidatePromptVersionId, blockId }),
+      ),
+    );
+  },
   async datasetGenerationAvailability(signal?: AbortSignal): Promise<{ enabled: boolean }> {
     const payload = await request(
       "/v1/datasets/generation-availability",

@@ -19,6 +19,124 @@
   --shadow: 0 18px 50px rgba(25, 39, 56, 0.08);
 }
 
+.flow-workspace,
+.flow-stack,
+.flow-form {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.flow-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.4rem;
+  min-width: 0;
+}
+.flow-card h2,
+.flow-card h3 {
+  margin: 0;
+}
+.flow-form label {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.flow-form small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.flow-form fieldset {
+  border: 1px solid var(--line);
+  padding: 1rem;
+  min-width: 0;
+  border-radius: 10px;
+}
+.flow-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+.flow-actions,
+.access-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: space-between;
+}
+.access-bar {
+  padding: 0.6rem 2rem;
+  border-bottom: 1px solid var(--line);
+  background: white;
+  font-size: 0.85rem;
+}
+.flow-form .flow-check,
+.flow-check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+.flow-check input[type="checkbox"] {
+  width: auto;
+  flex: none;
+  margin-top: 0.3rem;
+}
+.flow-badge {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 0.35rem 0.7rem;
+  background: var(--teal-pale);
+  color: var(--teal-deep);
+  font-size: 0.85rem;
+}
+.flow-wrap {
+  overflow-wrap: anywhere;
+}
+.flow-steps {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+.flow-steps li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1.1rem;
+  align-items: center;
+}
+.flow-step-number {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  background: var(--teal-pale);
+  color: var(--teal);
+  border-radius: 50%;
+  font-weight: bold;
+}
+progress {
+  width: 100%;
+  height: 1rem;
+  accent-color: var(--teal);
+}
+summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+@media (max-width: 700px) {
+  .flow-steps li {
+    grid-template-columns: auto 1fr;
+  }
+  .flow-steps li > button {
+    grid-column: 2;
+  }
+  .access-bar {
+    padding: 0.6rem 1rem;
+  }
+}
+
 .dataset-workspace {
   display: grid;
   gap: 1.5rem;
