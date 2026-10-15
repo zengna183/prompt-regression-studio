@@ -141,13 +141,39 @@ function FrameworkVersions({ frameworkId }: { frameworkId: string }) {
             </label>
           )}
           {source?.status === "draft" && (
-            <button
-              className="button button--primary"
-              disabled={busy}
-              onClick={() => void publish()}
-            >
-              确认内容并发布 v{source.version}
-            </button>
+            <div className="flow-stack">
+              <p>
+                发布的是当前已保存的 v{source.version}
+                ，不包含下方编辑区尚未保存的修改。需要修改时，请先保存新草稿。
+              </p>
+              <button
+                className="button button--primary"
+                disabled={busy}
+                onClick={() => void publish()}
+              >
+                发布已保存的 v{source.version}
+              </button>
+            </div>
+          )}
+          {source && (
+            <details className="flow-card">
+              <summary>查看 v{source.version} 已保存的评分内容</summary>
+              {source.definition.dimensions.map((dimension) => (
+                <section key={dimension.id}>
+                  <h3>
+                    {dimension.name} · 权重 {(dimension.weight * 100).toFixed(1)}%
+                  </h3>
+                  <p>{dimension.description}</p>
+                  <ul>
+                    {dimension.scoringGuide.map((guide) => (
+                      <li key={guide.score}>
+                        {guide.score} 分：{guide.description}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </details>
           )}
           {message && <p role="status">{message}</p>}
           {error && (

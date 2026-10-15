@@ -2,10 +2,33 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canonicalBundleFixture, diagnosisReportFixture } from "../diagnosis/testFixtures";
 import { DiagnosisResponseError } from "../diagnosis/validation";
-import { api, ApiError, getDiagnosisErrorMessage } from "./client";
+import { api, ApiError, getDiagnosisErrorMessage, getErrorMessage, setApiToken } from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setApiToken("");
+});
+
+describe("会话访问凭证与错误提示", () => {
+  it("只在设置后发送凭证，清除后不再附带", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+    setApiToken("  session-test-token  ");
+    await api.listProjects();
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Authorization")).toBe(
+      "Bearer session-test-token",
+    );
+    setApiToken("");
+    await api.listProjects();
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).has("Authorization")).toBe(false);
+  });
+  it("将无效凭证翻译成可操作的提示并保留请求编号", () => {
+    expect(getErrorMessage(new ApiError("Unauthorized", 401, "UNAUTHORIZED", "req-1"))).toBe(
+      "访问凭证无效或已失效，请通过页面顶部重新设置。（请求编号：req-1）",
+    );
+  });
 });
 
 describe("评测集导入 API 客户端", () => {

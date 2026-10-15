@@ -33,6 +33,12 @@
   padding: 1.4rem;
   min-width: 0;
 }
+.flow-workspace > :not(.workspace-header) {
+  margin-inline: clamp(1rem, 3vw, 2.5rem);
+}
+.flow-workspace {
+  padding-bottom: 2rem;
+}
 .flow-card h2,
 .flow-card h3 {
   margin: 0;

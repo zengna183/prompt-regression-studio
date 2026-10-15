@@ -52,8 +52,11 @@ export function ProjectSidebar({
           [
             { view: "home", title: "开始评测", help: "五步完成准备与运行", mark: "1" },
             { view: "models", title: "模型连接", help: "配置服务与管理密钥", mark: "M" },
+            { view: "catalog", title: "Prompt 版本", help: "管理版本和区段", mark: "P" },
+            { view: "datasets", title: "评测集", help: "录入、生成与人工审核", mark: "S" },
             { view: "frameworks", title: "评判标准", help: "评分规则与版本管理", mark: "R" },
             { view: "experiments", title: "实验与结果", help: "启动、比较与段落验证", mark: "E" },
+            { view: "diagnosis", title: "外部评测包诊断", help: "开发者导入与历史报告", mark: "D" },
           ] as const
         ).map((item) => (
           <button
@@ -72,48 +75,6 @@ export function ProjectSidebar({
             </span>
           </button>
         ))}
-        <button
-          className={
-            "primary-nav__item" + (activeView === "datasets" ? " primary-nav__item--active" : "")
-          }
-          type="button"
-          onClick={() => onNavigate("datasets")}
-          {...(activeView === "datasets" ? { "aria-current": "page" as const } : {})}
-        >
-          <span aria-hidden="true">S</span>
-          <span>
-            <strong>评测集</strong>
-            <small>导入、校验与草稿预览</small>
-          </span>
-        </button>
-        <button
-          className={
-            "primary-nav__item" + (activeView === "catalog" ? " primary-nav__item--active" : "")
-          }
-          type="button"
-          onClick={() => onNavigate("catalog")}
-          {...(activeView === "catalog" ? { "aria-current": "page" as const } : {})}
-        >
-          <span aria-hidden="true">P</span>
-          <span>
-            <strong>Prompt 版本</strong>
-            <small>管理版本和区段</small>
-          </span>
-        </button>
-        <button
-          className={
-            "primary-nav__item" + (activeView === "diagnosis" ? " primary-nav__item--active" : "")
-          }
-          type="button"
-          onClick={() => onNavigate("diagnosis")}
-          {...(activeView === "diagnosis" ? { "aria-current": "page" as const } : {})}
-        >
-          <span aria-hidden="true">D</span>
-          <span>
-            <strong>外部评测包诊断</strong>
-            <small>开发者导入与历史报告</small>
-          </span>
-        </button>
       </nav>
 
       <div className="sidebar-heading">

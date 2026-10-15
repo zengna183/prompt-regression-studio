@@ -13,7 +13,9 @@ import { api, setApiToken } from "../api/client";
 import { ManualDatasetCases } from "./ManualDatasetCases";
 import { ModelWorkspace } from "./ModelWorkspace";
 import { FrameworkEditor } from "./FrameworkWorkspace";
-import { ExperimentStart } from "./ExperimentForms";
+import { ExperimentCreate, ExperimentStart } from "./ExperimentForms";
+import { ExperimentWorkspace } from "./ExperimentWorkspace";
+import { diagnosisReportFixture } from "../diagnosis/testFixtures";
 import { CreateProjectForm } from "./CreateForms";
 
 const now = "2026-10-15T00:00:00.000Z";
@@ -84,6 +86,112 @@ afterEach(() => {
 });
 
 describe("非技术用户真实表单交互（模拟网络边界，不调用付费模型）", () => {
+  it("实验计划只可选择已发布版本，并保持基线与候选不同", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const path =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (init?.method === "POST") return Promise.resolve(json(detail.experiment));
+      const data = path.endsWith("/prompts")
+        ? [{ id: "prompt", name: "退款助手" }]
+        : path.endsWith("/datasets")
+          ? [{ id: "dataset", name: "退款用例" }]
+          : path.endsWith("/frameworks")
+            ? [{ id: "framework", name: "业务规则" }]
+            : path.includes("/prompts/prompt/versions")
+              ? [
+                  { id: "baseline", version: 1, status: "published" },
+                  { id: "candidate", version: 2, status: "published" },
+                  { id: "draft", version: 3, status: "draft" },
+                ]
+              : path.includes("/datasets/dataset/versions")
+                ? [{ id: "dataset-version", version: 1, status: "published", caseCount: 3 }]
+                : [{ id: "framework-version", version: 1, status: "published" }];
+      return Promise.resolve(json(data));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onCreated = vi.fn();
+    render(<ExperimentCreate projectId={project.id} onCreated={onCreated} />);
+    await user.type(await screen.findByLabelText("实验名称"), "退款比较");
+    await user.selectOptions(screen.getByLabelText("要比较的 Prompt"), "prompt");
+    const baseline = screen.getByLabelText<HTMLSelectElement>("基线版本（原来的版本）");
+    const candidate = screen.getByLabelText<HTMLSelectElement>("候选版本（想验证的新版本）");
+    expect(within(baseline).queryByRole("option", { name: /v3/ })).toBeNull();
+    await user.selectOptions(baseline, "baseline");
+    expect(within(candidate).getByRole<HTMLOptionElement>("option", { name: /v1/ }).disabled).toBe(
+      true,
+    );
+    await user.selectOptions(candidate, "candidate");
+    await user.selectOptions(screen.getByLabelText("评测集版本"), "dataset-version");
+    await user.selectOptions(screen.getByLabelText("评判标准版本"), "framework-version");
+    await user.click(screen.getByRole("button", { name: "保存实验计划" }));
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(posts[0]?.[1]?.body as string)).toMatchObject({
+      datasetVersionId: "dataset-version",
+      frameworkVersionId: "framework-version",
+      promptVersions: [
+        { promptVersionId: "baseline", isBaseline: true },
+        { promptVersionId: "candidate", isBaseline: false },
+      ],
+    });
+    expect(onCreated).toHaveBeenCalledOnce();
+  });
+
+  it("完成实验可查看诊断，段落重跑必须单独确认费用", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const path =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      let data: unknown;
+      if (path.endsWith("/experiments")) data = [{ ...detail.experiment, status: "succeeded" }];
+      else if (path.endsWith("/diagnoses")) data = diagnosisReportFixture;
+      else if (path.endsWith("/ablations"))
+        data = init?.method === "POST" ? { id: "ablation" } : [];
+      else if (path.endsWith("/comparison"))
+        data = {
+          ...detail.experiment,
+          experimentId: "experiment",
+          baselinePromptVersionId: "prompt-v1",
+          expectedObservationsPerVersion: 1,
+          isComplete: true,
+          versions: [],
+        };
+      else
+        data = {
+          ...detail,
+          experiment: { ...detail.experiment, status: "succeeded" },
+          promptVersions: [
+            { promptVersionId: "prompt-v1", isBaseline: true, label: "基线" },
+            { promptVersionId: "prompt-v2", isBaseline: false, label: "候选" },
+          ],
+        };
+      return Promise.resolve(json(data));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ExperimentWorkspace project={project} />);
+    await screen.findByRole("option", { name: "实验 · 已完成" });
+    await user.selectOptions(screen.getByLabelText("历史实验"), "experiment");
+    await user.selectOptions(await screen.findByLabelText("要诊断的候选版本"), "prompt-v2");
+    await user.click(screen.getByRole("button", { name: "生成 / 更新诊断报告" }));
+    await user.selectOptions(await screen.findByLabelText("回退哪个段落？"), "refund_policy");
+    const replay = screen.getByRole<HTMLButtonElement>("button", { name: "启动段落验证" });
+    expect(replay.disabled).toBe(true);
+    await user.click(screen.getByRole("checkbox", { name: /确认创建真实验证实验/ }));
+    await user.click(replay);
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts).toHaveLength(2);
+    expect(JSON.parse(posts[0]?.[1]?.body as string)).toEqual({
+      candidatePromptVersionId: "prompt-v2",
+      repetition: 1,
+      includeAblations: true,
+    });
+    expect(JSON.parse(posts[1]?.[1]?.body as string)).toEqual({
+      candidatePromptVersionId: "prompt-v2",
+      blockId: "refund_policy",
+    });
+  });
+
   it("中文项目名称无需填写英文标识", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn<(input: CreateProject) => Promise<void>>().mockResolvedValue(undefined);
@@ -264,6 +372,8 @@ describe("非技术用户真实表单交互（模拟网络边界，不调用付�
       expect(screen.getByRole("heading", { name: "连接受保护的评测服务" })).toBeTruthy(),
     );
     expect(screen.queryByText("当前项目：测试项目")).toBeNull();
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: "连接服务" }).disabled).toBe(false);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "连接服务" }).disabled).toBe(
+      false,
+    );
   });
 });
