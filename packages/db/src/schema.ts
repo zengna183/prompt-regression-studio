@@ -124,6 +124,67 @@ export const projects = pgTable(
   ],
 );
 
+/** Identity records are server-only. Never serialize a selected user/session row to HTTP. */
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: varchar("email", { length: 254 }).notNull(),
+    displayName: varchar("display_name", { length: 120 }).notNull(),
+    passwordHash: text("password_hash").notNull(),
+    credentialVersion: integer("credential_version").notNull().default(1),
+    isAdmin: boolean("is_admin").notNull().default(false),
+    disabledAt: timestamp("disabled_at", { withTimezone: true, mode: "date" }),
+    ...timestampColumns(),
+  },
+  (table) => [
+    uniqueIndex("users_email_uq").on(table.email),
+    check("users_email_normalized", sql`${table.email} = lower(btrim(${table.email}))`),
+    check("users_credential_version_positive", sql`${table.credentialVersion} > 0`),
+  ],
+);
+
+export const userSessions = pgTable(
+  "user_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    credentialVersion: integer("credential_version").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    uniqueIndex("user_sessions_token_hash_uq").on(table.tokenHash),
+    index("user_sessions_user_idx").on(table.userId),
+    index("user_sessions_expiry_idx").on(table.expiresAt),
+    check("user_sessions_token_hash_format", sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+    check("user_sessions_expiry_after_creation", sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
+export const projectMemberRoleEnum = pgEnum("project_member_role", ["owner", "editor", "viewer"]);
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: projectMemberRoleEnum("role").notNull(),
+    ...timestampColumns(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.userId] }),
+    index("project_members_user_idx").on(table.userId),
+  ],
+);
+
 /** Credentials never leave the server; public APIs select explicit metadata columns. */
 export const modelConnections = pgTable(
   "model_connections",

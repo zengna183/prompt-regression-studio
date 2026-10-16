@@ -3,6 +3,7 @@ export * from "./ablation.js";
 export * from "./config.js";
 export * from "./errors.js";
 export * from "./model-credentials.js";
+export * from "./passwords.js";
 export * from "./repositories/index.js";
 export * from "./schema.js";
 export * from "./versioning.js";

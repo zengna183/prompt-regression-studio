@@ -50,6 +50,13 @@
       "when": 1791902398345,
       "tag": "0006_sudden_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792124659299,
+      "tag": "0007_cute_mauler",
+      "breakpoints": true
     }
   ]
 }
