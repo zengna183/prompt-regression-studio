@@ -31,8 +31,16 @@ import type { AblationService } from "./ablation-service.js";
 import { ablationRoutes } from "./routes/ablations.js";
 import type { ModelConnectionService } from "./model-connection-service.js";
 import { modelConnectionRoutes } from "./routes/model-connections.js";
+import {
+  IdentityAccessError,
+  RepositoryConflictError,
+  PasswordCapacityError,
+} from "@ai-chat-eval/db";
+import { installTeamAuth, type TeamAuth } from "./team-auth.js";
+import { authRoutes } from "./routes/auth.js";
 
 export interface BuildAppOptions {
+  teamAuth?: TeamAuth;
   catalog: CatalogService;
   diagnosisEngine: DiagnosisEngine;
   diagnosisStore?: DiagnosisStore;
@@ -66,6 +74,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const diagnosisRateLimitMax = options.diagnosisRateLimitMax ?? 10;
 
   validateBuildAppOptions({
+    teamAuthEnabled: Boolean(options.teamAuth),
     authToken: options.authToken,
     bodyLimitBytes,
     productionMode,
@@ -106,9 +115,12 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     exposedHeaders: ["location", "x-diagnosis-run-id", "x-request-id"],
   });
 
+  if (options.teamAuth) installTeamAuth(app, options.teamAuth);
   app.addHook("onRequest", async (request, reply) => {
     void reply.header("x-request-id", request.id);
     if (
+      options.teamAuth !== undefined ||
+      request.routeOptions.url === "/v1/auth/status" ||
       options.authToken === undefined ||
       request.method === "OPTIONS" ||
       !isProtectedPath(request)
@@ -161,6 +173,19 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof IdentityAccessError)
+      return reply
+        .code(403)
+        .send({ code: "FORBIDDEN", message: "无权执行此账号或项目操作。", requestId: request.id });
+    if (error instanceof RepositoryConflictError)
+      return reply
+        .code(409)
+        .send({ code: error.code, message: error.message, requestId: request.id });
+    if (error instanceof PasswordCapacityError)
+      return reply
+        .header("retry-after", "2")
+        .code(503)
+        .send({ code: "AUTH_BUSY", message: "登录服务繁忙，请稍后重试。", requestId: request.id });
     if (error instanceof ApiError) {
       return reply.code(error.statusCode).send({
         code: error.code,
@@ -210,7 +235,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }),
   );
 
-  await app.register(catalogRoutes(options.catalog));
+  app.get("/v1/auth/status", () => ({ mode: options.teamAuth ? "team" : "legacy" }));
+  if (options.teamAuth) await app.register(authRoutes(options.teamAuth));
+  await app.register(catalogRoutes(options.catalog, options.teamAuth));
   await app.register(datasetRoutes(options.datasetService, options.datasetCaseGenerator));
   await app.register(
     diagnosisRoutes({
@@ -255,6 +282,7 @@ function tokensMatch(presented: string, expected: string): boolean {
 }
 
 interface ResolvedSecurityOptions {
+  readonly teamAuthEnabled: boolean;
   readonly authToken: string | undefined;
   readonly bodyLimitBytes: number;
   readonly productionMode: boolean;
@@ -274,7 +302,7 @@ function validateBuildAppOptions(options: ResolvedSecurityOptions): void {
       "authToken must contain 32-512 characters without whitespace or control characters.",
     );
   }
-  if (options.productionMode && options.authToken === undefined) {
+  if (options.productionMode && options.authToken === undefined && !options.teamAuthEnabled) {
     throw new Error("authToken is required in production mode.");
   }
 

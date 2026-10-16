@@ -77,6 +77,10 @@ export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAs
           tags: ["diagnoses"],
           summary: "Diagnose a canonical baseline-to-candidate prompt regression bundle",
           body: CanonicalBundleEnvelopeSchema,
+          querystring: Type.Object(
+            { projectId: Type.Optional(UuidSchema) },
+            { additionalProperties: false },
+          ),
         },
       },
       async (request, reply) => {
@@ -87,7 +91,12 @@ export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAs
             "Load recorded evidence from the project experiment diagnosis endpoint; uploaded recorded evidence is not trusted.",
           );
         }
-        return executeDiagnosis(request, reply, () => Promise.resolve(request.body as JsonObject));
+        return executeDiagnosis(
+          request,
+          reply,
+          () => Promise.resolve(request.body as JsonObject),
+          request.authorizedProjectId ?? undefined,
+        );
       },
     );
 

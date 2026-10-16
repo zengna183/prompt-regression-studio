@@ -69,7 +69,10 @@ async function ensureEmailAvailable(db: RepositoryDatabase, email: string) {
 export function createIdentityRepository(db: RepositoryDatabase) {
   return {
     /** Deployment-only bootstrap: exactly one first administrator, never a public registration API. */
-    async bootstrap(input: AccountInput): Promise<AccountIdentity> {
+    async bootstrap(
+      input: AccountInput,
+      options: { claimExistingProjects?: boolean } = {},
+    ): Promise<AccountIdentity> {
       const fields = accountFields(input);
       const passwordHash = await hashPassword(input.password);
       return db.transaction(async (tx) => {
@@ -86,6 +89,25 @@ export function createIdentityRepository(db: RepositoryDatabase) {
           .returning(publicColumns);
         if (!created) throw new Error("Account creation failed.");
         await record(tx, created.id, "identity.bootstrap", created.id);
+        if (options.claimExistingProjects) {
+          const existingProjects = await tx
+            .select({ id: projects.id })
+            .from(projects)
+            .where(isNull(projects.archivedAt));
+          for (const project of existingProjects) {
+            await tx
+              .insert(projectMembers)
+              .values({ projectId: project.id, userId: created.id, role: "owner" });
+            await tx.insert(auditEvents).values({
+              projectId: project.id,
+              actorType: "user",
+              actorId: created.id,
+              action: "identity.legacy_project_claimed",
+              entityType: "project",
+              entityId: project.id,
+            });
+          }
+        }
         return created;
       });
     },

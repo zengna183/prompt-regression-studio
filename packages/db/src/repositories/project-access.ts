@@ -76,16 +76,14 @@ export function createProjectAccessRepository(db: RepositoryDatabase) {
         const [created] = await tx.insert(projects).values(fields).returning();
         if (!created) throw new Error("Project creation failed.");
         await tx.insert(projectMembers).values({ projectId: created.id, userId, role: "owner" });
-        await tx
-          .insert(auditEvents)
-          .values({
-            projectId: created.id,
-            actorType: "user",
-            actorId: userId,
-            action: "project.created",
-            entityType: "project",
-            entityId: created.id,
-          });
+        await tx.insert(auditEvents).values({
+          projectId: created.id,
+          actorType: "user",
+          actorId: userId,
+          action: "project.created",
+          entityType: "project",
+          entityId: created.id,
+        });
         return created;
       });
     },
@@ -157,17 +155,15 @@ export function createProjectAccessRepository(db: RepositoryDatabase) {
               target: [projectMembers.projectId, projectMembers.userId],
               set: { role, updatedAt: new Date() },
             });
-        await tx
-          .insert(auditEvents)
-          .values({
-            projectId,
-            actorType: "user",
-            actorId,
-            action: role === null ? "project.member_removed" : "project.member_changed",
-            entityType: "user",
-            entityId: userId,
-            data: { previousRole: existing?.role ?? null, role },
-          });
+        await tx.insert(auditEvents).values({
+          projectId,
+          actorType: "user",
+          actorId,
+          action: role === null ? "project.member_removed" : "project.member_changed",
+          entityType: "user",
+          entityId: userId,
+          data: { previousRole: existing?.role ?? null, role },
+        });
       });
     },
   };

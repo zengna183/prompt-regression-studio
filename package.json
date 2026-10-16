@@ -9,6 +9,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "auth:bootstrap": "pnpm packages:build && pnpm --filter @ai-chat-eval/api auth:bootstrap",
     "setup:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local.ps1",
     "env:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-environment.ps1",
     "windows:enable-wsl": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enable-wsl.ps1",

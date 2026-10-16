@@ -5,6 +5,9 @@ import {
   createDatasetRepository,
   createModelConnectionRepository,
   optionalModelEncryptionKey,
+  createIdentityRepository,
+  createProjectAccessRepository,
+  createResourceProjectResolver,
 } from "@ai-chat-eval/db";
 import { createEvaluationQueue } from "@ai-chat-eval/queue";
 import { PythonProcessDiagnosisEngine } from "@prompt-regression/diagnosis-engine";
@@ -91,6 +94,15 @@ const diagnosisEngine = new PythonProcessDiagnosisEngine({
   },
 });
 const app = await buildApp({
+  ...(config.AUTH_MODE === "team"
+    ? {
+        teamAuth: {
+          identity: createIdentityRepository(database.db),
+          projects: createProjectAccessRepository(database.db),
+          resolveProject: createResourceProjectResolver(database.db),
+        },
+      }
+    : {}),
   catalog: createDatabaseCatalog(database.db),
   diagnosisEngine,
   diagnosisStore: createDatabaseDiagnosisStore(database.db),

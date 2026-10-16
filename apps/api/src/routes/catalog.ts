@@ -15,6 +15,7 @@ import { Type } from "@sinclair/typebox";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 
 import type { CatalogService } from "../catalog-service.js";
+import { requireAccount, type TeamAuth } from "../team-auth.js";
 
 const ProjectParams = Type.Object({ projectId: UuidSchema }, { additionalProperties: false });
 const PromptParams = Type.Object({ promptId: UuidSchema }, { additionalProperties: false });
@@ -25,12 +26,19 @@ const FrameworkVersionParams = Type.Object(
   { additionalProperties: false },
 );
 
-export function catalogRoutes(catalog: CatalogService): FastifyPluginAsyncTypebox {
+export function catalogRoutes(catalog: CatalogService, team?: TeamAuth): FastifyPluginAsyncTypebox {
   return (app) => {
     app.get(
       "/v1/projects",
       { schema: { tags: ["projects"], response: { 200: Type.Array(ProjectSchema) } } },
-      async () => catalog.listProjects(),
+      async (request) =>
+        team
+          ? (await team.projects.listProjects(requireAccount(request).id)).map(({ project }) => ({
+              ...project,
+              createdAt: project.createdAt.toISOString(),
+              updatedAt: project.updatedAt.toISOString(),
+            }))
+          : catalog.listProjects(),
     );
 
     app.post(
@@ -42,7 +50,15 @@ export function catalogRoutes(catalog: CatalogService): FastifyPluginAsyncTypebo
           response: { 201: ProjectSchema },
         },
       },
-      async (request, reply) => reply.code(201).send(await catalog.createProject(request.body)),
+      async (request, reply) => {
+        if (!team) return reply.code(201).send(await catalog.createProject(request.body));
+        const project = await team.projects.createProject(requireAccount(request).id, request.body);
+        return reply.code(201).send({
+          ...project,
+          createdAt: project.createdAt.toISOString(),
+          updatedAt: project.updatedAt.toISOString(),
+        });
+      },
     );
 
     app.get(

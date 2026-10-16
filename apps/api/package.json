@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "auth:bootstrap": "tsx --env-file=../../.env src/bootstrap-admin.ts",
     "dev": "tsx watch --env-file=../../.env src/server.ts",
     "build": "node ../../scripts/clean-build-output.mjs && tsc -p tsconfig.build.json",
     "start": "node --env-file=../../.env dist/server.js",
