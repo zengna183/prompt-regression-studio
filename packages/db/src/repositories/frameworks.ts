@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 
-import type { Database } from "../client.js";
+import type { RepositoryDatabase } from "../client.js";
 import {
   EntityNotFoundError,
   InvalidVersionStateError,
@@ -71,7 +71,7 @@ function normalizeActorId(value: string | null | undefined): string | null {
   return normalized;
 }
 
-export function createFrameworkRepository(db: Database): FrameworkRepository {
+export function createFrameworkRepository(db: RepositoryDatabase): FrameworkRepository {
   return {
     async create(input) {
       try {

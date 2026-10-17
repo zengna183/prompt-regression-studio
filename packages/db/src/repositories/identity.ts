@@ -317,3 +317,38 @@ export function createIdentityRepository(db: RepositoryDatabase) {
   };
 }
 export type IdentityRepository = ReturnType<typeof createIdentityRepository>;
+
+/** Deployment recovery only. Never expose this operation through an unauthenticated HTTP route. */
+export async function resetAccountPasswordForDeployment(
+  db: RepositoryDatabase,
+  email: string,
+  nextPassword: string,
+): Promise<void> {
+  const normalized = normalizeAccountEmail(email);
+  const passwordHash = await hashPassword(nextPassword);
+  await db.transaction(async (tx) => {
+    await lockIdentityMutation(tx);
+    const [target] = await tx.select().from(users).where(eq(users.email, normalized)).for("update");
+    // Recovery must not silently create an account or reactivate a disabled identity.
+    if (!target || target.disabledAt) throw new IdentityAccessError();
+    await tx
+      .update(users)
+      .set({
+        passwordHash,
+        credentialVersion: sql`${users.credentialVersion} + 1`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(users.id, target.id));
+    await tx
+      .update(userSessions)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(userSessions.userId, target.id), isNull(userSessions.revokedAt)));
+    await tx.insert(auditEvents).values({
+      actorType: "system",
+      actorId: "deployment:password-recovery",
+      action: "identity.password_reset",
+      entityType: "user",
+      entityId: target.id,
+    });
+  });
+}

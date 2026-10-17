@@ -1,6 +1,6 @@
 import { asc, eq, isNull } from "drizzle-orm";
 
-import type { Database } from "../client.js";
+import type { RepositoryDatabase } from "../client.js";
 import { EntityNotFoundError } from "../errors.js";
 import { projects, type Project } from "../schema.js";
 import { mapUniqueViolation, normalizeDescription, normalizeKey, normalizeName } from "./common.js";
@@ -46,7 +46,7 @@ function pageOffset(value: number | undefined): number {
   return value;
 }
 
-export function createProjectRepository(db: Database): ProjectRepository {
+export function createProjectRepository(db: RepositoryDatabase): ProjectRepository {
   return {
     async create(input) {
       try {

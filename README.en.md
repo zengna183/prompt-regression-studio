@@ -8,7 +8,9 @@ It is designed to answer more than “which prompt scored higher?” It asks whe
 
 > **Project status: pre-alpha; not suitable for production decisions.**
 >
-> The reproducible diagnosis slice now runs through the CLI, HTTP API, or browser, and paired Promptfoo v3 results can be imported under strict confounder checks. Diagnosis records can be persisted after applying the initial PostgreSQL migration, and the API now has a deployment-wide bearer-token gate and resource controls. Real-model ablations, user accounts, role-based authorization, and tenant isolation are not complete. Use this release locally, on an isolated network, or as a controlled single-team deployment.
+> Evaluation, diagnosis and controlled segment rollback are implemented, with opt-in personal login, project membership roles and API-level project isolation. See [TASKS.md](./TASKS.md) for the latest verified scope. Paid-model acceptance, load/failure testing, monitoring and recovery drills remain outstanding. Use this release locally, on an isolated network, or for controlled team trials; it is not a mature multi-tenant SaaS.
+
+For multiple users, enable `AUTH_MODE=team` using the [team setup instructions](./docs/GETTING_STARTED.md#登录与团队开通). The default `legacy` mode retains shared deployment credentials and does **not** provide personal account isolation.
 
 ## Why this is not another general Eval clone
 

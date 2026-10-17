@@ -79,6 +79,56 @@ examples/missing-information-regression/regression-bundle.json
 
 运行成功后，页面会显示回归用例、Prompt 区段变化、失败分组、根因假设和消融证据。报告同时写入 PostgreSQL，并出现在“最近诊断”中。
 
+## 登录与团队开通
+
+默认 `AUTH_MODE=legacy` 用于本机或旧部署：共享凭证可以访问整个部署，不区分个人。多人试用请使用 `team` 模式；两种模式不会同时接受同一套凭证。
+
+1. 先备份旧数据并运行 `pnpm db:migrate`，不要删除数据库重新初始化。
+2. 由部署负责人创建第一个管理员。下面的 PowerShell 示例通过隐藏输入读取密码，不把真实密码写进命令历史或 `.env`：
+
+```powershell
+$env:AUTH_BOOTSTRAP_EMAIL = Read-Host '管理员邮箱'
+$env:AUTH_BOOTSTRAP_NAME = Read-Host '管理员姓名'
+$taskSecret = Read-Host '管理员密码（15～128 个字符）' -AsSecureString
+try {
+    $env:AUTH_BOOTSTRAP_PASSWORD = [System.Net.NetworkCredential]::new('', $taskSecret).Password
+    pnpm auth:bootstrap
+    if ($LASTEXITCODE -ne 0) { throw '初始化失败，请根据提示检查；不要继续切换模式。' }
+} finally {
+    Remove-Item Env:AUTH_BOOTSTRAP_PASSWORD -ErrorAction SilentlyContinue
+    $taskSecret.Dispose()
+}
+```
+
+macOS/Linux 可用 `read -r` 读取邮箱、`read -rs` 隐藏读取密码，再将 `AUTH_BOOTSTRAP_EMAIL`、`AUTH_BOOTSTRAP_PASSWORD` 导出到当前进程环境并运行 `pnpm auth:bootstrap`；完成后 `unset AUTH_BOOTSTRAP_PASSWORD`。部署平台应通过 Secret Manager 注入，不在命令行参数里填写密码。
+
+旧项目不会自动分给新账号。如果确认旧部署的全部项目均应交给这位首任管理员，可在**第一次初始化前**显式设置 `AUTH_BOOTSTRAP_CLAIM_EXISTING_PROJECTS=true`；初始化后移除该变量。不设置时旧数据保留，但团队模式下不可见。这不是数据丢失，也不要通过切回 `legacy` 对外开放来绕过权限。已有账号时初始化命令会拒绝覆盖；未认领项目的后续迁移目前需要部署负责人另行安排。
+
+3. 在 `.env` 把 `AUTH_MODE` 改为 `team`，重启 API 和网页。网页将显示个人登录；旧 `API_AUTH_TOKEN` 不能用于团队模式。
+4. 管理员在“账号与成员”创建普通账号，通过安全渠道交付初始密码，提醒用户登录后修改。项目负责人再按邮箱将账号加入项目，选择负责人、编辑者或只读成员。创建账号不会自动获得所有项目权限，平台管理员也没有项目数据旁路。
+
+会话保存在服务端，网页令牌仅在内存里保留；刷新需重新登录，最长有效期 12 小时。修改密码、停用账号会撤销旧会话。最后一位有效平台管理员不能被停用，项目最后一位有效负责人不能被移除或降级。成员移除不自动取消已经提交的实验。当前没有公开注册、邮件邀请、SSO（企业统一登录）或 MFA（多重验证）。
+
+### 忘记密码
+
+请联系拥有部署和数据库访问权限的人；普通项目负责人没有账号恢复权限。部署负责人运行：
+
+```powershell
+$env:AUTH_RECOVERY_EMAIL = Read-Host '需要恢复的账号邮箱'
+$env:AUTH_RECOVERY_CONFIRM_EMAIL = Read-Host '再次输入同一邮箱，确认目标'
+$taskSecret = Read-Host '新临时密码（15～128 个字符）' -AsSecureString
+try {
+    $env:AUTH_RECOVERY_PASSWORD = [System.Net.NetworkCredential]::new('', $taskSecret).Password
+    pnpm auth:reset-password
+    if ($LASTEXITCODE -ne 0) { throw '恢复失败，请根据提示检查。' }
+} finally {
+    Remove-Item Env:AUTH_RECOVERY_PASSWORD -ErrorAction SilentlyContinue
+    $taskSecret.Dispose()
+}
+```
+
+macOS/Linux 和部署平台同样通过环境变量提供这三个值，并在执行后移除密码变量。命令只重置指定有效账号的密码并撤销全部旧会话，不创建账号、不恢复停用账号、不更改角色；操作写入审计事件且不记录密码。通过安全渠道交付临时密码，并请用户登录后修改。不要直接改数据库里的密码哈希，也不要开放匿名 HTTP 密码重置接口。
+
 ## 6. 常见问题
 
 ### 页面提示无法连接 API

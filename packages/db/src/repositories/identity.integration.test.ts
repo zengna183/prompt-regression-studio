@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabaseClient, type DatabaseClient, type RepositoryDatabase } from "../client.js";
@@ -8,6 +8,7 @@ import { loadDatabaseConfig } from "../config.js";
 import { auditEvents, projectMembers, projects, userSessions, users } from "../schema.js";
 import {
   createIdentityRepository,
+  resetAccountPasswordForDeployment,
   type AccountIdentity,
   type IdentityRepository,
 } from "./identity.js";
@@ -46,7 +47,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("identity and project isolation"
       await client.db.delete(projects).where(inArray(projects.id, projectIds));
     }
     if (accountIds.length) {
-      await client.db.delete(auditEvents).where(inArray(auditEvents.actorId, accountIds));
+      await client.db
+        .delete(auditEvents)
+        .where(
+          or(inArray(auditEvents.actorId, accountIds), inArray(auditEvents.entityId, accountIds)),
+        );
       await client.db.delete(users).where(inArray(users.id, accountIds));
     }
     await client.close();
@@ -151,38 +156,83 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("identity and project isolation"
     expect(await identity.login(member.email, PASSWORD)).toBeNull();
     expect(await identity.login(member.email, "another long test-only passphrase")).not.toBeNull();
   }, 20_000);
-  it("a login verified before a password change cannot create a valid session afterward", async () => {
+  it("deployment recovery revokes sessions without changing roles, reactivating or creating users", async () => {
     const member = await user();
-    let unblock!: () => void;
-    let verified!: () => void;
-    const wait = new Promise<void>((resolve) => {
-      unblock = resolve;
-    });
-    const ready = new Promise<void>((resolve) => {
-      verified = resolve;
-    });
-    const gatedDb: RepositoryDatabase = {
-      select: client.db.select.bind(client.db),
-      insert: client.db.insert.bind(client.db),
-      update: client.db.update.bind(client.db),
-      execute: client.db.execute.bind(client.db),
-      transaction: async (callback) => {
-        verified();
-        await wait;
-        return client.db.transaction(callback);
-      },
-    };
-    const pendingLogin = createIdentityRepository(gatedDb).login(member.email, PASSWORD);
-    await ready;
-    try {
-      expect(
-        await identity.changePassword(member.id, PASSWORD, "new password while login is pending"),
-      ).toBe(true);
-    } finally {
-      unblock();
-    }
-    expect(await pendingLogin).toBeNull();
-  }, 20_000);
+    const owned = await project(member.id);
+    const login = await identity.login(member.email, PASSWORD);
+    const next = "deployment recovery test-only passphrase";
+    await expect(
+      resetAccountPasswordForDeployment(client.db, member.email, "short"),
+    ).rejects.toThrow();
+    expect(await identity.resolveSession(login!.token)).toEqual(member);
+    await resetAccountPasswordForDeployment(client.db, member.email.toUpperCase(), next);
+    expect(await identity.resolveSession(login!.token)).toBeNull();
+    expect(await identity.login(member.email, PASSWORD)).toBeNull();
+    expect((await identity.login(member.email, next))?.user).toEqual(member);
+    expect(await access.roleFor(member.id, owned.id)).toBe("owner");
+    await expect(
+      resetAccountPasswordForDeployment(client.db, `unknown-${randomUUID()}@example.test`, next),
+    ).rejects.toThrow();
+    const disabled = await user();
+    await identity.disableUser(admin.id, disabled.id);
+    await expect(
+      resetAccountPasswordForDeployment(client.db, disabled.email, next),
+    ).rejects.toThrow();
+    expect(await identity.login(disabled.email, next)).toBeNull();
+    const events =
+      await client.sql`select actor_type, data from audit_events where entity_id = ${member.id} and action = 'identity.password_reset'`;
+    expect(events).toHaveLength(1);
+    expect(events[0]?.actor_type).toBe("system");
+    expect(JSON.stringify(events)).not.toContain(next);
+  }, 30_000);
+  it.each(["change", "recovery"] as const)(
+    "a pending login cannot survive password %s",
+    async (operation) => {
+      const member = await user();
+      let unblock!: () => void;
+      let verified!: () => void;
+      const wait = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      const ready = new Promise<void>((resolve) => {
+        verified = resolve;
+      });
+      const gatedDb: RepositoryDatabase = {
+        select: client.db.select.bind(client.db),
+        insert: client.db.insert.bind(client.db),
+        update: client.db.update.bind(client.db),
+        execute: client.db.execute.bind(client.db),
+        transaction: async (callback) => {
+          verified();
+          await wait;
+          return client.db.transaction(callback);
+        },
+      };
+      const pendingLogin = createIdentityRepository(gatedDb).login(member.email, PASSWORD);
+      await ready;
+      try {
+        if (operation === "change") {
+          expect(
+            await identity.changePassword(
+              member.id,
+              PASSWORD,
+              "new password while login is pending",
+            ),
+          ).toBe(true);
+        } else {
+          await resetAccountPasswordForDeployment(
+            client.db,
+            member.email,
+            "new password while login is pending",
+          );
+        }
+      } finally {
+        unblock();
+      }
+      expect(await pendingLogin).toBeNull();
+    },
+    20_000,
+  );
   it("creating a project atomically assigns its owner; administrators cannot read unrelated projects", async () => {
     const member = await user();
     const owned = await project(member.id);

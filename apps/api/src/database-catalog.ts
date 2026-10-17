@@ -18,7 +18,7 @@ import {
   InvalidVersionStateError,
   RepositoryConflictError,
   VersionContentError,
-  type Database,
+  type RepositoryDatabase,
   type EvaluationFramework,
   type EvaluationFrameworkVersion,
   type Project,
@@ -124,7 +124,7 @@ async function fromRepository<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export function createDatabaseCatalog(db: Database): CatalogService {
+export function createDatabaseCatalog(db: RepositoryDatabase): CatalogService {
   const projects = createProjectRepository(db);
   const prompts = createPromptRepository(db);
   const frameworks = createFrameworkRepository(db);
