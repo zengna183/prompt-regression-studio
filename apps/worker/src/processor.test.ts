@@ -1,4 +1,4 @@
-import { UnrecoverableError } from "bullmq";
+import { DelayedError, UnrecoverableError } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Logger } from "./logger.js";
@@ -16,6 +16,41 @@ function createLoggerStub(): Logger {
 }
 
 describe("processEvaluationJob", () => {
+  it("defers an active database lease instead of acknowledging or consuming error attempts", async () => {
+    const job: EvaluationJobEnvelope = {
+      id: "redelivery",
+      name: "evaluation.run",
+      attemptsMade: 2,
+      data: {
+        type: "evaluation.run",
+        evaluationRunId: "4f7e9f89-c7c9-4eaf-85f7-0aca6d02acc5",
+        requestedAt: "2026-09-12T00:00:00.000Z",
+      },
+    };
+    const executor = {
+      execute: vi.fn().mockResolvedValue({ status: "busy", succeededCount: 0, failedCount: 0 }),
+    };
+    const defer = vi.fn<(delayMs: number) => Promise<void>>().mockResolvedValue(undefined);
+    await expect(
+      processEvaluationJob(job, createLoggerStub(), executor, defer),
+    ).rejects.toBeInstanceOf(DelayedError);
+    expect(defer).toHaveBeenCalledWith(30_000);
+    await expect(processEvaluationJob(job, createLoggerStub(), executor)).rejects.toThrow(
+      "redelivery",
+    );
+    defer.mockRejectedValueOnce(new Error("lock lost"));
+    await expect(processEvaluationJob(job, createLoggerStub(), executor, defer)).rejects.toThrow(
+      "lock lost",
+    );
+    executor.execute.mockResolvedValueOnce({
+      status: "already_claimed",
+      succeededCount: 0,
+      failedCount: 0,
+    });
+    await expect(
+      processEvaluationJob(job, createLoggerStub(), executor, defer),
+    ).resolves.toBeUndefined();
+  });
   it("fails a known but unimplemented job without fabricating a result", async () => {
     const job: EvaluationJobEnvelope = {
       id: "job-1",

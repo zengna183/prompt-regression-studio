@@ -272,26 +272,34 @@ describe("evaluation executor", () => {
     });
   });
 
-  it("does not execute a run that another worker already claimed", async () => {
-    const repository = createRepository(createSnapshot());
-    repository.claimEvaluation = vi.fn(() => Promise.resolve(null));
-    const executor = createEvaluationExecutor({
-      repository,
-      baseUrl: "https://api.example.com",
-      apiKey: "provider-test-key-that-is-long-enough",
-      production: true,
-      allowPrivateNetwork: false,
-      timeoutMs: 10_000,
-      fetchImpl: vi.fn(),
-    });
+  it.each(["running", "succeeded", "cancelled"] as const)(
+    "does not confuse a %s run with a completed redelivery",
+    async (status) => {
+      const source = createSnapshot();
+      const repository = createRepository({
+        ...source,
+        evaluationRun: { ...source.evaluationRun, status },
+        experiment: { ...source.experiment, status: "running" },
+      });
+      repository.claimEvaluation = vi.fn(() => Promise.resolve(null));
+      const executor = createEvaluationExecutor({
+        repository,
+        baseUrl: "https://api.example.com",
+        apiKey: "provider-test-key-that-is-long-enough",
+        production: true,
+        allowPrivateNetwork: false,
+        timeoutMs: 10_000,
+        fetchImpl: vi.fn(),
+      });
 
-    await expect(executor.execute("eval-run", logger)).resolves.toEqual({
-      status: "already_claimed",
-      succeededCount: 0,
-      failedCount: 0,
-    });
-    expect(repository.saved).toHaveLength(0);
-  });
+      await expect(executor.execute("eval-run", logger)).resolves.toEqual({
+        status: status === "running" ? "busy" : "already_claimed",
+        succeededCount: 0,
+        failedCount: 0,
+      });
+      expect(repository.saved).toHaveLength(0);
+    },
+  );
 
   it("stops before calling a provider when an experiment was cancelled", async () => {
     const repository = createRepository(createSnapshot());

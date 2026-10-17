@@ -1,5 +1,5 @@
 import { assertEvaluationJob, type EvaluationJob } from "@ai-chat-eval/queue";
-import { UnrecoverableError, type Job } from "bullmq";
+import { DelayedError, UnrecoverableError, type Job } from "bullmq";
 
 import type { EvaluationExecutor } from "./executor.js";
 import type { Logger } from "./logger.js";
@@ -28,15 +28,12 @@ function assertJobPayload(job: EvaluationJobEnvelope): EvaluationJob {
   return job.data;
 }
 
-/**
- * The initial foundation intentionally has no evaluator implementation. Jobs fail
- * loudly and without retrying so an incomplete deployment can never publish a
- * fabricated score or silently report success.
- */
+/** Queue acknowledgement follows database completion, never just lease contention. */
 export function processEvaluationJob(
   job: EvaluationJobEnvelope,
   logger: Logger,
   executor?: EvaluationExecutor,
+  defer?: (delayMs: number) => Promise<void>,
 ): Promise<void> {
   return Promise.resolve().then(() => {
     const data = assertJobPayload(job);
@@ -55,7 +52,13 @@ export function processEvaluationJob(
             "Evaluation executor is not configured; no score was created",
           );
         }
-        return executor.execute(data.evaluationRunId, jobLogger).then(() => undefined);
+        return executor.execute(data.evaluationRunId, jobLogger).then(async (result) => {
+          if (result.status !== "busy") return;
+          if (!defer) throw new Error("Active evaluation lease requires queue redelivery");
+          await defer(30_000);
+          // BullMQ leaves the job delayed without spending its finite error attempts.
+          throw new DelayedError();
+        });
       case "evaluation.reevaluate":
         throw new UnrecoverableError(
           "evaluation.reevaluate is not implemented in the generation milestone; no score was created",

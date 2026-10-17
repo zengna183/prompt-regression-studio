@@ -55,7 +55,11 @@ async function main(): Promise<void> {
 
   const worker = new Worker<EvaluationJob, void, EvaluationJobName>(
     EVALUATION_QUEUE_NAME,
-    (job) => processEvaluationJob(job, logger, executor),
+    (job, token) =>
+      processEvaluationJob(job, logger, executor, async (delayMs) => {
+        if (!token) throw new Error("Worker lock token is required to delay a busy evaluation");
+        await job.moveToDelayed(Date.now() + delayMs, token);
+      }),
     {
       connection: redis,
       concurrency: config.concurrency,

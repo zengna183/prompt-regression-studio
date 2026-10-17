@@ -39,7 +39,7 @@ export interface EvaluationExecutorOptions {
 }
 
 export interface EvaluationExecutionResult {
-  readonly status: "completed" | "already_claimed" | "cancelled";
+  readonly status: "completed" | "already_claimed" | "busy" | "cancelled";
   readonly succeededCount: number;
   readonly failedCount: number;
 }
@@ -113,7 +113,14 @@ export function createEvaluationExecutor(options: EvaluationExecutorOptions): Ev
           : { staleAfterMs: options.staleRunAfterMs },
       );
       if (!claimed) {
-        return { status: "already_claimed", succeededCount: 0, failedCount: 0 };
+        // A redelivered queue job is not finished merely because its database lease
+        // is still active. Re-read: the first snapshot may precede a cancellation.
+        const current = await options.repository.getExecutionSnapshot(evaluationRunId);
+        if (!current) throw new Error(`Evaluation run not found: ${evaluationRunId}`);
+        const active =
+          ["queued", "running"].includes(current.evaluationRun.status) &&
+          ["queued", "running"].includes(current.experiment.status);
+        return { status: active ? "busy" : "already_claimed", succeededCount: 0, failedCount: 0 };
       }
       const generationRun = await options.repository.startGenerationRun(snapshot.generationRun.id);
       if (generationRun.status === "cancelled") {
