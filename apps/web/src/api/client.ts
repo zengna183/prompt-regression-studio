@@ -46,6 +46,24 @@ const API_BASE_URL = (configuredBaseUrl || "http://localhost:4000").replace(/\/$
 
 // An administrator token is session-only. Never persist it or bake it into the bundle.
 let sessionToken = "";
+let sessionExpired: (() => void) | undefined;
+export function onSessionExpired(handler: (() => void) | undefined) {
+  sessionExpired = handler;
+}
+export interface AccountIdentity {
+  id: string;
+  email: string;
+  displayName: string;
+  isAdmin: boolean;
+}
+export type ProjectRole = "owner" | "editor" | "viewer";
+export interface ProjectMember {
+  userId: string;
+  email: string;
+  displayName: string;
+  role: ProjectRole;
+  disabledAt: string | null;
+}
 export function setApiToken(value: string) {
   sessionToken = value.trim();
 }
@@ -130,10 +148,11 @@ async function readPayload(response: Response): Promise<unknown> {
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
+  const requestToken = sessionToken;
   let response: Response;
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (sessionToken) headers.set("Authorization", `Bearer ${sessionToken}`);
+  if (requestToken) headers.set("Authorization", `Bearer ${requestToken}`);
   if (init.body) {
     headers.set("Content-Type", "application/json");
   }
@@ -153,6 +172,13 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
   const payload = await readPayload(response);
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      requestToken &&
+      requestToken === sessionToken &&
+      !["/v1/auth/login", "/v1/auth/password"].includes(path)
+    )
+      sessionExpired?.();
     const body: ApiErrorBody = isRecord(payload) ? payload : {};
     const message =
       typeof body.message === "string" ? body.message : `请求失败（${response.status}）`;
@@ -167,6 +193,12 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     const hints: Record<string, string> = {
+      INVALID_CREDENTIALS: "邮箱或密码不正确，或账号已停用。",
+      LAST_PROJECT_OWNER: "项目至少需要一名负责人，请先指定另一名负责人。",
+      LAST_ADMIN: "不能停用最后一名平台管理员。",
+      ACCOUNT_EMAIL_EXISTS: "这个邮箱已有账号，请直接添加为项目成员。",
+      ACCOUNT_NOT_FOUND: "未找到可用账号，请先联系平台管理员创建这个邮箱的账号。",
+      INVALID_ACCOUNT_INPUT: "请检查邮箱、姓名和密码长度（15～128 个字符）。",
       INVALID_MODEL_CONNECTION:
         "模型连接配置无效。请检查地址、模型名称，以及管理员设置的供应商地址白名单。",
     };
@@ -222,6 +254,48 @@ export function getDiagnosisErrorMessage(error: unknown): string {
 }
 
 export const api = {
+  async authStatus(signal?: AbortSignal): Promise<{ mode: "legacy" | "team" }> {
+    return unwrapEntity(await request("/v1/auth/status", signal ? { signal } : {}));
+  },
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{ user: AccountIdentity; token: string; expiresAt: string }> {
+    return unwrapEntity(await request("/v1/auth/login", post({ email, password })));
+  },
+  async logout(): Promise<void> {
+    await request("/v1/auth/logout", post());
+  },
+  async changePassword(currentPassword: string, nextPassword: string): Promise<void> {
+    await request("/v1/auth/password", post({ currentPassword, nextPassword }));
+  },
+  async listUsers(
+    signal?: AbortSignal,
+  ): Promise<(AccountIdentity & { disabledAt: string | null })[]> {
+    return unwrapList(await request("/v1/auth/users", signal ? { signal } : {}));
+  },
+  async createUser(input: {
+    email: string;
+    displayName: string;
+    password: string;
+  }): Promise<AccountIdentity> {
+    return unwrapEntity(await request("/v1/auth/users", post(input)));
+  },
+  async disableUser(id: string): Promise<void> {
+    await request(`/v1/auth/users/${encodeURIComponent(id)}/disable`, post());
+  },
+  async projectAccess(id: string, signal?: AbortSignal): Promise<{ role: ProjectRole }> {
+    return unwrapEntity(await request(`${projectPath(id)}/access`, signal ? { signal } : {}));
+  },
+  async listMembers(id: string, signal?: AbortSignal): Promise<ProjectMember[]> {
+    return unwrapList(await request(`${projectPath(id)}/members`, signal ? { signal } : {}));
+  },
+  async setMember(
+    id: string,
+    input: { email: string; role: ProjectRole } | { userId: string; role: ProjectRole | null },
+  ): Promise<void> {
+    await request(`${projectPath(id)}/members`, post(input));
+  },
   async listModelConnections(projectId: string, signal?: AbortSignal): Promise<ModelConnection[]> {
     return unwrapList<ModelConnection>(
       await request(`${projectPath(projectId)}/model-connections`, signal ? { signal } : {}),
@@ -455,17 +529,27 @@ export const api = {
   async diagnose(
     bundle: CanonicalRegressionBundle,
     signal?: AbortSignal,
+    projectId?: string,
   ): Promise<DiagnosisReport> {
-    const payload = await request("/v1/diagnoses", {
-      method: "POST",
-      body: JSON.stringify(bundle),
-      ...(signal ? { signal } : {}),
-    });
+    const payload = await request(
+      `/v1/diagnoses${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify(bundle),
+        ...(signal ? { signal } : {}),
+      },
+    );
     return parseDiagnosisReport(unwrapEntity<unknown>(payload));
   },
 
-  async listDiagnoses(signal?: AbortSignal): Promise<readonly DiagnosisRunSummary[]> {
-    const payload = await request("/v1/diagnoses?limit=25", signal ? { signal } : undefined);
+  async listDiagnoses(
+    signal?: AbortSignal,
+    projectId?: string,
+  ): Promise<readonly DiagnosisRunSummary[]> {
+    const payload = await request(
+      `/v1/diagnoses?limit=25${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`,
+      signal ? { signal } : undefined,
+    );
     return parseDiagnosisRunList(payload);
   },
 

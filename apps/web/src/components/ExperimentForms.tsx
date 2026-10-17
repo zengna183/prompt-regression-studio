@@ -4,6 +4,7 @@ import { api, getErrorMessage } from "../api/client";
 import { useResource } from "../lib/useResource";
 import { ErrorState, LoadingState } from "./StatusViews";
 import { ModelPicker, useModelConnections, type ModelChoice } from "./ModelPicker";
+import { useProjectAccess } from "./ProjectAccess";
 
 export function ExperimentCreate({
   projectId,
@@ -12,6 +13,7 @@ export function ExperimentCreate({
   projectId: string;
   onCreated: (experiment: Experiment) => void;
 }) {
+  const { canEdit } = useProjectAccess();
   const resource = useResource(
     useCallback(
       async (signal: AbortSignal) => {
@@ -68,7 +70,7 @@ export function ExperimentCreate({
     (resource.data?.datasets.find((d) => d.id === datasetId)?.caseCount ?? 0) * repetitions * 2;
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !canEdit) return;
     setError(null);
     if (
       !baseline ||
@@ -113,7 +115,7 @@ export function ExperimentCreate({
       {resource.error && <ErrorState message={resource.error} onRetry={resource.reload} />}
       {resource.data && (
         <form className="flow-form" onSubmit={(e) => void create(e)}>
-          <fieldset className="flow-form" disabled={busy}>
+          <fieldset className="flow-form" disabled={busy || !canEdit}>
             <label>
               实验名称
               <input
@@ -256,6 +258,7 @@ export function ExperimentStart({
   detail: ExperimentDetail;
   onStarted: () => void;
 }) {
+  const { canEdit } = useProjectAccess();
   const connections = useModelConnections(detail.experiment.projectId);
   const [generation, setGeneration] = useState<ModelChoice>({ connectionId: "", model: "" });
   const [judge, setJudge] = useState<ModelChoice>({ connectionId: "", model: "" });
@@ -267,7 +270,7 @@ export function ExperimentStart({
   const [maxTokens, setMaxTokens] = useState(1024);
   async function start(event: FormEvent) {
     event.preventDefault();
-    if (busy || !confirmed || !connections.data) return;
+    if (!canEdit || busy || !confirmed || !connections.data) return;
     setBusy(true);
     setError(null);
     try {
@@ -308,7 +311,7 @@ export function ExperimentStart({
       {connections.loading && <LoadingState />}
       {connections.error && <ErrorState message={connections.error} onRetry={connections.reload} />}
       {connections.data && (
-        <fieldset className="flow-form" disabled={busy}>
+        <fieldset className="flow-form" disabled={busy || !canEdit}>
           <ModelPicker
             label="生成回答的模型"
             {...connections.data}

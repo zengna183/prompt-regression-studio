@@ -6,6 +6,7 @@ import { CreateProjectForm } from "./CreateForms";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
 
 interface ProjectSidebarProps {
+  teamEnabled?: boolean;
   projects: Project[];
   selectedProjectId: string | null;
   activeView: ActiveView;
@@ -18,6 +19,7 @@ interface ProjectSidebarProps {
 }
 
 export function ProjectSidebar({
+  teamEnabled = false,
   projects,
   selectedProjectId,
   activeView,
@@ -48,6 +50,20 @@ export function ProjectSidebar({
       </div>
 
       <nav className="primary-nav" aria-label="主要功能">
+        {teamEnabled && (
+          <button
+            type="button"
+            className={`primary-nav__item${activeView === "team" ? " primary-nav__item--active" : ""}`}
+            onClick={() => onNavigate("team")}
+            {...(activeView === "team" ? { "aria-current": "page" as const } : {})}
+          >
+            <span aria-hidden="true">T</span>
+            <span>
+              <strong>账号与成员</strong>
+              <small>修改密码和管理项目权限</small>
+            </span>
+          </button>
+        )}
         {(
           [
             { view: "home", title: "开始评测", help: "五步完成准备与运行", mark: "1" },

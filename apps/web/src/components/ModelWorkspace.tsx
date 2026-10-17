@@ -3,8 +3,10 @@ import type { Project } from "@ai-chat-eval/contracts";
 import { api, ApiError, getErrorMessage, type ModelConnection } from "../api/client";
 import { useResource } from "../lib/useResource";
 import { ErrorState, LoadingState } from "./StatusViews";
+import { useProjectAccess } from "./ProjectAccess";
 
 export function ModelWorkspace({ project }: { project: Project }) {
+  const { canManage } = useProjectAccess();
   const resource = useResource(
     useCallback(
       async (signal: AbortSignal) => {
@@ -32,7 +34,7 @@ export function ModelWorkspace({ project }: { project: Project }) {
   const [message, setMessage] = useState("");
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !canManage) return;
     setBusy(true);
     setError(null);
     setMessage("");
@@ -69,76 +71,79 @@ export function ModelWorkspace({ project }: { project: Project }) {
       {resource.error && <ErrorState message={resource.error} onRetry={resource.reload} />}
       {resource.data && (
         <>
-          <form className="flow-card flow-form" onSubmit={(event) => void create(event)}>
-            <h2>添加模型连接</h2>
-            <label>
-              连接名称
-              <input
-                required
-                maxLength={120}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="例如：团队模型服务"
-                disabled={busy}
-              />
-            </label>
-            <label>
-              服务地址
-              <input
-                required
-                type="url"
-                maxLength={2048}
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://你的模型服务地址/v1"
-                disabled={busy}
-              />
-              <small>由模型供应商提供的基础地址，不要填写完整的对话请求路径。</small>
-            </label>
-            <label>
-              API Key（供应商提供的调用密钥）
-              <input
-                required
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
-                maxLength={512}
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                disabled={busy}
-              />
-              <small>仅用于提交，保存后不会回显；不会存入浏览器的本地存储。</small>
-            </label>
-            <label>
-              可用模型名称
-              <textarea
-                required
-                maxLength={12050}
-                value={models}
-                onChange={(e) => setModels(e.target.value)}
-                placeholder="填写供应商的准确模型名称，多个模型用换行或逗号分隔"
-                disabled={busy}
-              />
-            </label>
-            <label className="flow-check">
-              <input
-                type="checkbox"
-                checked={supportsSeed}
-                onChange={(e) => setSupportsSeed(e.target.checked)}
-                disabled={busy}
-              />
-              服务支持随机种子（帮助重复评测保持一致；不支持时取消）
-            </label>
-            <button className="button button--primary" disabled={busy} type="submit">
-              {busy ? "正在保存…" : "保存连接"}
-            </button>
-            {error && (
-              <p role="alert" className="form-error">
-                {error}
-              </p>
-            )}
-            {message && <p role="status">{message}</p>}
-          </form>
+          {canManage && (
+            <form className="flow-card flow-form" onSubmit={(event) => void create(event)}>
+              <h2>添加模型连接</h2>
+              <label>
+                连接名称
+                <input
+                  required
+                  maxLength={120}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例如：团队模型服务"
+                  disabled={busy}
+                />
+              </label>
+              <label>
+                服务地址
+                <input
+                  required
+                  type="url"
+                  maxLength={2048}
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://你的模型服务地址/v1"
+                  disabled={busy}
+                />
+                <small>由模型供应商提供的基础地址，不要填写完整的对话请求路径。</small>
+              </label>
+              <label>
+                API Key（供应商提供的调用密钥）
+                <input
+                  required
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={512}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  disabled={busy}
+                />
+                <small>仅用于提交，保存后不会回显；不会存入浏览器的本地存储。</small>
+              </label>
+              <label>
+                可用模型名称
+                <textarea
+                  required
+                  maxLength={12050}
+                  value={models}
+                  onChange={(e) => setModels(e.target.value)}
+                  placeholder="填写供应商的准确模型名称，多个模型用换行或逗号分隔"
+                  disabled={busy}
+                />
+              </label>
+              <label className="flow-check">
+                <input
+                  type="checkbox"
+                  checked={supportsSeed}
+                  onChange={(e) => setSupportsSeed(e.target.checked)}
+                  disabled={busy}
+                />
+                服务支持随机种子（帮助重复评测保持一致；不支持时取消）
+              </label>
+              <button className="button button--primary" disabled={busy} type="submit">
+                {busy ? "正在保存…" : "保存连接"}
+              </button>
+              {error && (
+                <p role="alert" className="form-error">
+                  {error}
+                </p>
+              )}
+              {message && <p role="status">{message}</p>}
+            </form>
+          )}
+          {!canManage && <p>仅项目负责人可以添加、测试、停用模型连接或更换密钥。</p>}
           <section className="flow-stack" aria-label="已保存的连接">
             <h2>已保存的连接</h2>
             {resource.data.length === 0 && (
@@ -165,13 +170,14 @@ function ConnectionCard({
   connection: ModelConnection;
   onChanged: () => void;
 }) {
+  const { canManage } = useProjectAccess();
   const [busy, setBusy] = useState(false);
   const [secret, setSecret] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   async function act(kind: "test" | "rotate" | "disable") {
-    if (busy) return;
+    if (busy || !canManage) return;
     setBusy(true);
     setMessage("");
     setError(null);
@@ -207,7 +213,7 @@ function ConnectionCard({
       </h3>
       <p className="flow-wrap">{connection.baseUrl}</p>
       <p>模型：{connection.allowedModels.join("、")}</p>
-      {!connection.disabledAt && (
+      {!connection.disabledAt && canManage && (
         <>
           <button
             className="button button--secondary"

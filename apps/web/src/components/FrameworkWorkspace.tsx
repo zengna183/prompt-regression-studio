@@ -3,8 +3,10 @@ import type { Project, FrameworkDefinition, FrameworkVersion } from "@ai-chat-ev
 import { api, getErrorMessage } from "../api/client";
 import { useResource } from "../lib/useResource";
 import { ErrorState, LoadingState } from "./StatusViews";
+import { useProjectAccess } from "./ProjectAccess";
 
 export function FrameworkWorkspace({ project }: { project: Project }) {
+  const { canEdit } = useProjectAccess();
   const resource = useResource(
     useCallback((signal: AbortSignal) => api.listFrameworks(project.id, signal), [project.id]),
   );
@@ -15,7 +17,7 @@ export function FrameworkWorkspace({ project }: { project: Project }) {
   const selectedId = selected || resource.data?.[0]?.id || "";
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !canEdit) return;
     setBusy(true);
     setError(null);
     try {
@@ -41,29 +43,31 @@ export function FrameworkWorkspace({ project }: { project: Project }) {
           <p>设置评分维度、权重和分数说明。修改会保存为新版本，历史实验使用的标准不会被改变。</p>
         </div>
       </header>
-      <form className="flow-card flow-form" onSubmit={(e) => void create(e)}>
-        <h2>新建一套评判标准</h2>
-        <label>
-          名称
-          <input
-            required
-            minLength={2}
-            maxLength={120}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="例如：客服对话质量标准"
-            disabled={busy}
-          />
-        </label>
-        <button className="button button--secondary" disabled={busy}>
-          创建标准
-        </button>
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
-        )}
-      </form>
+      {canEdit && (
+        <form className="flow-card flow-form" onSubmit={(e) => void create(e)}>
+          <h2>新建一套评判标准</h2>
+          <label>
+            名称
+            <input
+              required
+              minLength={2}
+              maxLength={120}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例如：客服对话质量标准"
+              disabled={busy}
+            />
+          </label>
+          <button className="button button--secondary" disabled={busy}>
+            创建标准
+          </button>
+          {error && (
+            <p role="alert" className="form-error">
+              {error}
+            </p>
+          )}
+        </form>
+      )}
       {resource.loading && <LoadingState />}
       {resource.error && <ErrorState message={resource.error} onRetry={resource.reload} />}
       {resource.data && resource.data.length > 0 && (
@@ -86,6 +90,7 @@ export function FrameworkWorkspace({ project }: { project: Project }) {
 }
 
 function FrameworkVersions({ frameworkId }: { frameworkId: string }) {
+  const { canEdit } = useProjectAccess();
   const resource = useResource(
     useCallback(
       (signal: AbortSignal) => api.listFrameworkVersions(frameworkId, signal),
@@ -98,7 +103,7 @@ function FrameworkVersions({ frameworkId }: { frameworkId: string }) {
   const [message, setMessage] = useState("");
   const source = resource.data?.find((item) => item.id === selected) ?? resource.data?.[0];
   async function publish() {
-    if (!source || busy) return;
+    if (!source || busy || !canEdit) return;
     setBusy(true);
     setError(null);
     try {
@@ -140,7 +145,7 @@ function FrameworkVersions({ frameworkId }: { frameworkId: string }) {
               </select>
             </label>
           )}
-          {source?.status === "draft" && (
+          {source?.status === "draft" && canEdit && (
             <div className="flow-stack">
               <p>
                 发布的是当前已保存的 v{source.version}
@@ -181,16 +186,18 @@ function FrameworkVersions({ frameworkId }: { frameworkId: string }) {
               {error}
             </p>
           )}
-          <FrameworkEditor
-            key={source?.id ?? "new"}
-            frameworkId={frameworkId}
-            source={source}
-            onSaved={(version) => {
-              setSelected(version.id);
-              setMessage("草稿已保存。核对内容后点击发布，才会用于新实验。");
-              resource.reload();
-            }}
-          />
+          {canEdit && (
+            <FrameworkEditor
+              key={source?.id ?? "new"}
+              frameworkId={frameworkId}
+              source={source}
+              onSaved={(version) => {
+                setSelected(version.id);
+                setMessage("草稿已保存。核对内容后点击发布，才会用于新实验。");
+                resource.reload();
+              }}
+            />
+          )}
         </>
       )}
     </section>
@@ -222,6 +229,7 @@ export function FrameworkEditor({
   source: FrameworkVersion | undefined;
   onSaved: (version: FrameworkVersion) => void;
 }) {
+  const { canEdit } = useProjectAccess();
   const [definition, setDefinition] = useState<FrameworkDefinition>(() =>
     structuredClone(source?.definition ?? initialDefinition),
   );
@@ -239,7 +247,7 @@ export function FrameworkEditor({
   }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !canEdit) return;
     setError(null);
     if (Math.abs(total - 1) > 0.00001) {
       setError("各维度的权重加起来应为 100%。");
@@ -272,7 +280,7 @@ export function FrameworkEditor({
     <form className="flow-card flow-form" onSubmit={(e) => void save(e)}>
       <h2>{source ? `基于 v${source.version} 保存新草稿` : "设置第一版标准"}</h2>
       <p>示例文字仅供起步，请根据你的业务修改。分数支持 0～5；至少写清两个不同分数的含义。</p>
-      <fieldset disabled={busy} className="flow-stack">
+      <fieldset disabled={busy || !canEdit} className="flow-stack">
         <legend>评分维度</legend>
         {definition.dimensions.map((dimension, index) => (
           <section className="flow-card flow-form" key={dimension.id}>

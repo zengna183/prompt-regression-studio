@@ -2,14 +2,66 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canonicalBundleFixture, diagnosisReportFixture } from "../diagnosis/testFixtures";
 import { DiagnosisResponseError } from "../diagnosis/validation";
-import { api, ApiError, getDiagnosisErrorMessage, getErrorMessage, setApiToken } from "./client";
+import {
+  api,
+  ApiError,
+  getDiagnosisErrorMessage,
+  getErrorMessage,
+  onSessionExpired,
+  setApiToken,
+} from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   setApiToken("");
+  onSessionExpired(undefined);
 });
 
 describe("会话访问凭证与错误提示", () => {
+  it("旧请求的 401 不会撤销后来重新登录的新会话", async () => {
+    let finish: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const expired = vi.fn();
+    onSessionExpired(expired);
+    setApiToken("old-token");
+    const pending = api.listProjects();
+    const rejected = expect(pending).rejects.toMatchObject({ status: 401 });
+    setApiToken("new-token");
+    finish?.(
+      new Response(JSON.stringify({ code: "UNAUTHORIZED" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await rejected;
+    expect(expired).not.toHaveBeenCalled();
+  });
+  it("错误的当前密码不撤销仍有效的页面会话", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ code: "INVALID_CREDENTIALS" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    const expired = vi.fn();
+    onSessionExpired(expired);
+    setApiToken("active-token");
+    await expect(api.changePassword("wrong", "new long password")).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(expired).not.toHaveBeenCalled();
+  });
   it("只在设置后发送凭证，清除后不再附带", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

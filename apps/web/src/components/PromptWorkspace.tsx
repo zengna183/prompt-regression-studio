@@ -5,8 +5,10 @@ import { api, getErrorMessage } from "../api/client";
 import { CreatePromptForm } from "./CreateForms";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
 import { VersionList } from "./VersionList";
+import { useProjectAccess } from "./ProjectAccess";
 
 export function PromptWorkspace({ project }: { project: Project }) {
+  const { canEdit } = useProjectAccess();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,7 @@ export function PromptWorkspace({ project }: { project: Project }) {
   );
 
   async function handleCreate(input: CreatePrompt) {
+    if (!canEdit) return;
     const created = await api.createPrompt(project.id, input);
     setPrompts((current) => [...current, created]);
     setSelectedPromptId(created.id);
@@ -87,6 +90,7 @@ export function PromptWorkspace({ project }: { project: Project }) {
               type="button"
               onClick={() => setCreating(true)}
               aria-label="新建 Prompt"
+              disabled={!canEdit}
             >
               +
             </button>
@@ -105,6 +109,7 @@ export function PromptWorkspace({ project }: { project: Project }) {
                   className="button button--secondary"
                   type="button"
                   onClick={() => setCreating(true)}
+                  disabled={!canEdit}
                 >
                   新建 Prompt
                 </button>

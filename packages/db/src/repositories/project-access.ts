@@ -4,6 +4,7 @@ import { RepositoryConflictError } from "../errors.js";
 import { auditEvents, projectMembers, projects, users } from "../schema.js";
 import { normalizeDescription, normalizeKey, normalizeName } from "./common.js";
 import { IdentityAccessError, lockIdentityMutation } from "./identity.js";
+import { normalizeAccountEmail } from "../passwords.js";
 import type { CreateProjectInput } from "./projects.js";
 
 export type ProjectRole = "owner" | "editor" | "viewer";
@@ -43,6 +44,19 @@ async function roleFor(
 /** Administrative status does not grant access to projects: membership is always required. */
 export function createProjectAccessRepository(db: RepositoryDatabase) {
   return {
+    async findMemberTarget(
+      actorId: string,
+      projectId: string,
+      email: string,
+    ): Promise<string | null> {
+      if ((await roleFor(db, actorId, projectId)) !== "owner") throw new IdentityAccessError();
+      const normalized = normalizeAccountEmail(email);
+      const [user] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.email, normalized), isNull(users.disabledAt)));
+      return user?.id ?? null;
+    },
     roleFor: (userId: string, projectId: string) => roleFor(db, userId, projectId),
     async listProjects(userId: string) {
       const rows = await db

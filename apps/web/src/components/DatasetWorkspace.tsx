@@ -7,8 +7,10 @@ import { DatasetGeneration } from "./DatasetGeneration";
 import { DatasetReview } from "./DatasetReview";
 import { ManualDatasetCases } from "./ManualDatasetCases";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
+import { useProjectAccess } from "./ProjectAccess";
 
 export function DatasetWorkspace({ project }: { project: Project }) {
+  const { canEdit } = useProjectAccess();
   const id = useId();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -41,6 +43,7 @@ export function DatasetWorkspace({ project }: { project: Project }) {
   }, [project.id, reload]);
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (!canEdit || creating) return;
     setCreating(true);
     setError(null);
     try {
@@ -73,39 +76,41 @@ export function DatasetWorkspace({ project }: { project: Project }) {
       ) : null}
       {!loading ? (
         <>
-          <form className="dataset-create" onSubmit={(event) => void create(event)}>
-            <h2>新建评测集</h2>
-            <label htmlFor={`${id}-name`}>
-              名称
-              <input
-                id={`${id}-name`}
-                required
-                minLength={2}
-                maxLength={120}
-                value={name}
-                disabled={creating}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="例如：客服退款对话"
-              />
-            </label>
-            <label htmlFor={`${id}-key`}>
-              英文标识（可选，留空自动生成）
-              <input
-                id={`${id}-key`}
-                minLength={2}
-                maxLength={64}
-                pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                value={key}
-                disabled={creating}
-                onChange={(event) => setKey(event.target.value)}
-                placeholder="例如：support-refund"
-              />
-              <small>用于开发者接入，支持小写字母、数字和短横线。</small>
-            </label>
-            <button className="button button--secondary" disabled={creating} type="submit">
-              {creating ? "正在创建…" : "创建评测集"}
-            </button>
-          </form>
+          {canEdit && (
+            <form className="dataset-create" onSubmit={(event) => void create(event)}>
+              <h2>新建评测集</h2>
+              <label htmlFor={`${id}-name`}>
+                名称
+                <input
+                  id={`${id}-name`}
+                  required
+                  minLength={2}
+                  maxLength={120}
+                  value={name}
+                  disabled={creating}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="例如：客服退款对话"
+                />
+              </label>
+              <label htmlFor={`${id}-key`}>
+                英文标识（可选，留空自动生成）
+                <input
+                  id={`${id}-key`}
+                  minLength={2}
+                  maxLength={64}
+                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                  value={key}
+                  disabled={creating}
+                  onChange={(event) => setKey(event.target.value)}
+                  placeholder="例如：support-refund"
+                />
+                <small>用于开发者接入，支持小写字母、数字和短横线。</small>
+              </label>
+              <button className="button button--secondary" disabled={creating} type="submit">
+                {creating ? "正在创建…" : "创建评测集"}
+              </button>
+            </form>
+          )}
           {datasets.length === 0 ? (
             <EmptyState
               title="还没有评测集"
@@ -142,6 +147,7 @@ export function DatasetWorkspace({ project }: { project: Project }) {
   );
 }
 function DatasetImportPanel({ datasetId, projectId }: { datasetId: string; projectId: string }) {
+  const { canEdit } = useProjectAccess();
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -167,29 +173,42 @@ function DatasetImportPanel({ datasetId, projectId }: { datasetId: string; proje
   const selectedVersion = versions.find((version) => version.id === openVersionId);
   return (
     <>
-      <ManualDatasetCases
-        datasetId={datasetId}
-        onSaved={(version) => {
-          setVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
-          setOpenVersionId(version.id);
-          setReload((value) => value + 1);
-        }}
-      />
-      <DatasetImport
-        datasetId={datasetId}
-        onSaved={(version) => {
-          setVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
-          setReload((value) => value + 1);
-        }}
-      />
-      <DatasetGeneration
-        datasetId={datasetId}
-        projectId={projectId}
-        onSaved={(version) => {
-          setVersions((current) => [version, ...current.filter((item) => item.id !== version.id)]);
-          setReload((value) => value + 1);
-        }}
-      />
+      {canEdit && (
+        <>
+          <ManualDatasetCases
+            datasetId={datasetId}
+            onSaved={(version) => {
+              setVersions((current) => [
+                version,
+                ...current.filter((item) => item.id !== version.id),
+              ]);
+              setOpenVersionId(version.id);
+              setReload((value) => value + 1);
+            }}
+          />
+          <DatasetImport
+            datasetId={datasetId}
+            onSaved={(version) => {
+              setVersions((current) => [
+                version,
+                ...current.filter((item) => item.id !== version.id),
+              ]);
+              setReload((value) => value + 1);
+            }}
+          />
+          <DatasetGeneration
+            datasetId={datasetId}
+            projectId={projectId}
+            onSaved={(version) => {
+              setVersions((current) => [
+                version,
+                ...current.filter((item) => item.id !== version.id),
+              ]);
+              setReload((value) => value + 1);
+            }}
+          />
+        </>
+      )}
       <section className="dataset-versions">
         <h2>已保存的版本</h2>
         {loading ? (
@@ -227,7 +246,7 @@ function DatasetImportPanel({ datasetId, projectId }: { datasetId: string; proje
                 >
                   {openVersionId === version.id
                     ? "收起"
-                    : version.status === "draft"
+                    : version.status === "draft" && canEdit
                       ? "查看并审核"
                       : "查看"}
                 </button>

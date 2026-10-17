@@ -142,17 +142,39 @@ export function authRoutes(team: TeamAuth): FastifyPluginAsyncTypebox {
       {
         schema: {
           params: ProjectParams,
-          body: Type.Object(
-            { userId: UuidSchema, role: Type.Union([MemberRole, Type.Null()]) },
-            { additionalProperties: false },
-          ),
+          body: Type.Union([
+            Type.Object(
+              { userId: UuidSchema, role: Type.Union([MemberRole, Type.Null()]) },
+              { additionalProperties: false },
+            ),
+            Type.Object(
+              { email: Type.String({ maxLength: 254 }), role: MemberRole },
+              { additionalProperties: false },
+            ),
+          ]),
         },
       },
       async (request) => {
+        const userId =
+          "userId" in request.body
+            ? request.body.userId
+            : await inputOperation(() =>
+                team.projects.findMemberTarget(
+                  requireAccount(request).id,
+                  request.params.projectId,
+                  "email" in request.body ? request.body.email : "",
+                ),
+              );
+        if (!userId)
+          throw new ApiError(
+            404,
+            "ACCOUNT_NOT_FOUND",
+            "未找到可用账号，请先联系平台管理员创建该邮箱的账号。",
+          );
         await team.projects.setMember(
           requireAccount(request).id,
           request.params.projectId,
-          request.body.userId,
+          userId,
           request.body.role,
         );
         return { ok: true };

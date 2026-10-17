@@ -54,6 +54,9 @@ async function fixture(role: ProjectRole = "owner", isAdmin = false) {
     updatedAt: now,
   };
   const projects: ProjectAccessRepository = {
+    findMemberTarget: vi
+      .fn<ProjectAccessRepository["findMemberTarget"]>()
+      .mockResolvedValue(user.id),
     roleFor: vi
       .fn<ProjectAccessRepository["roleFor"]>()
       .mockImplementation((_user, id) => Promise.resolve(id === projectId ? role : null)),
@@ -119,6 +122,46 @@ async function fixture(role: ProjectRole = "owner", isAdmin = false) {
 }
 
 describe("team API authorization", () => {
+  it("lets owners add registered accounts by email without exposing the user directory", async () => {
+    const { app, team, user, projectId, headers } = await fixture();
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/members`,
+      headers,
+      payload: { email: "other@example.test", role: "viewer" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(team.projects.findMemberTarget).toHaveBeenCalledWith(
+      user.id,
+      projectId,
+      "other@example.test",
+    );
+    expect(team.projects.setMember).toHaveBeenCalledWith(user.id, projectId, user.id, "viewer");
+    expect(team.identity.listUsers).not.toHaveBeenCalled();
+  });
+  it("does not mutate membership for unknown emails or accept email-based removals", async () => {
+    const { app, team, projectId, headers } = await fixture();
+    vi.mocked(team.projects.findMemberTarget).mockResolvedValue(null);
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/members`,
+      headers,
+      payload: { email: "unknown@example.test", role: "viewer" },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "ACCOUNT_NOT_FOUND" });
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/v1/projects/${projectId}/members`,
+          headers,
+          payload: { email: "other@example.test", role: null },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(team.projects.setMember).not.toHaveBeenCalled();
+  });
   it("supports public mode discovery/login but not the legacy administrator token", async () => {
     const { app } = await fixture();
     expect((await app.inject({ url: "/v1/auth/status" })).json()).toEqual({ mode: "team" });

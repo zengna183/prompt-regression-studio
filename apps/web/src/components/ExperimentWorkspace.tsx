@@ -11,6 +11,7 @@ import { ErrorState, LoadingState } from "./StatusViews";
 import { ExperimentCreate, ExperimentStart } from "./ExperimentForms";
 import { DiagnosisReportView } from "./DiagnosisReport";
 import type { DiagnosisReport } from "../diagnosis/types";
+import { useProjectAccess } from "./ProjectAccess";
 
 export const runStatusLabels: Record<string, string> = {
   draft: "草稿",
@@ -25,6 +26,7 @@ const percent = (value: number | null) =>
   value === null ? "暂无数据" : `${(value * 100).toFixed(1)}%`;
 
 export function ExperimentWorkspace({ project }: { project: Project }) {
+  const { canEdit } = useProjectAccess();
   const list = useResource(
     useCallback((signal: AbortSignal) => api.listExperiments(project.id, signal), [project.id]),
   );
@@ -42,7 +44,11 @@ export function ExperimentWorkspace({ project }: { project: Project }) {
           <h1>比较 Prompt，找到改进依据</h1>
           <p>先比较效果，再查看退化原因；段落验证会真实重跑模型，不把猜测当作原因。</p>
         </div>
-        <button className="button button--primary" onClick={() => setCreating(true)}>
+        <button
+          className="button button--primary"
+          disabled={!canEdit}
+          onClick={() => setCreating(true)}
+        >
           新建实验
         </button>
       </header>
@@ -64,7 +70,7 @@ export function ExperimentWorkspace({ project }: { project: Project }) {
           刷新列表
         </button>
       </div>
-      {(creating || (!selectedId && list.data?.length === 0)) && (
+      {canEdit && (creating || (!selectedId && list.data?.length === 0)) && (
         <ExperimentCreate
           projectId={project.id}
           onCreated={(experiment) => {
@@ -100,6 +106,7 @@ function ExperimentView({
   experimentId: string;
   onOpen: (id: string) => void;
 }) {
+  const { canEdit } = useProjectAccess();
   const [detail, setDetail] = useState<ExperimentDetail | null>(null);
   const [comparison, setComparison] = useState<ExperimentComparison | null>(null);
   const [ablations, setAblations] = useState<Ablation[]>([]);
@@ -145,7 +152,7 @@ function ExperimentView({
     setRevision((value) => value + 1);
   }
   async function cancel() {
-    if (busy || !cancelConfirmed) return;
+    if (!canEdit || busy || !cancelConfirmed) return;
     setBusy(true);
     setActionError(null);
     try {
@@ -158,7 +165,7 @@ function ExperimentView({
     }
   }
   async function diagnose() {
-    if (!candidateId || busy) return;
+    if (!canEdit || !candidateId || busy) return;
     setBusy(true);
     setActionError(null);
     setReport(null);
@@ -173,7 +180,7 @@ function ExperimentView({
     }
   }
   async function replay() {
-    if (!report || !blockId || !replayConfirmed || busy) return;
+    if (!canEdit || !report || !blockId || !replayConfirmed || busy) return;
     setBusy(true);
     setActionError(null);
     try {
@@ -242,7 +249,7 @@ function ExperimentView({
             </label>
             <button
               className="button button--secondary"
-              disabled={!cancelConfirmed || busy}
+              disabled={!canEdit || !cancelConfirmed || busy}
               onClick={() => void cancel()}
             >
               确认取消
@@ -256,7 +263,7 @@ function ExperimentView({
           {actionError}
         </p>
       )}
-      {detail.experiment.status === "draft" && (
+      {detail.experiment.status === "draft" && canEdit && (
         <ExperimentStart detail={detail} onStarted={refresh} />
       )}
       {detail.runs.length > 0 && (
@@ -310,7 +317,7 @@ function ExperimentView({
           </label>
           <button
             className="button button--primary"
-            disabled={!candidateId || busy}
+            disabled={!canEdit || !candidateId || busy}
             onClick={() => void diagnose()}
           >
             {busy ? "正在处理…" : "生成 / 更新诊断报告"}
@@ -353,7 +360,7 @@ function ExperimentView({
                   </label>
                   <button
                     className="button button--secondary"
-                    disabled={!blockId || !replayConfirmed || busy}
+                    disabled={!canEdit || !blockId || !replayConfirmed || busy}
                     onClick={() => void replay()}
                   >
                     启动段落验证

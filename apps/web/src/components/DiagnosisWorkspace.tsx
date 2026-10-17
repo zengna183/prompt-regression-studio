@@ -18,7 +18,10 @@ interface SelectedBundle {
   readonly size: number;
 }
 
-export function DiagnosisWorkspace() {
+import { useProjectAccess } from "./ProjectAccess";
+
+export function DiagnosisWorkspace({ projectId }: { projectId?: string } = {}) {
+  const { canEdit } = useProjectAccess();
   const [selected, setSelected] = useState<SelectedBundle | null>(null);
   const [pasteText, setPasteText] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
@@ -39,13 +42,13 @@ export function DiagnosisWorkspace() {
       controller.abort();
       requestController.current?.abort();
     };
-  }, []);
+  }, [projectId]);
 
   async function loadHistory(signal?: AbortSignal): Promise<void> {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      setHistory(await api.listDiagnoses(signal));
+      setHistory(await api.listDiagnoses(signal, projectId));
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setHistoryError(getDiagnosisErrorMessage(error));
@@ -113,14 +116,14 @@ export function DiagnosisWorkspace() {
   }
 
   async function runDiagnosis(): Promise<void> {
-    if (!selected || runState === "running") return;
+    if (!canEdit || !selected || runState === "running") return;
     requestController.current?.abort();
     const controller = new AbortController();
     requestController.current = controller;
     setRunState("running");
     setRunError(null);
     try {
-      const nextReport = await api.diagnose(selected.bundle, controller.signal);
+      const nextReport = await api.diagnose(selected.bundle, controller.signal, projectId);
       if (controller.signal.aborted) return;
       setReport(nextReport);
       setRunState("complete");
@@ -328,7 +331,7 @@ export function DiagnosisWorkspace() {
               <button
                 className="button button--primary"
                 type="button"
-                disabled={!selected}
+                disabled={!canEdit || !selected}
                 onClick={() => void runDiagnosis()}
               >
                 {report ? "重新运行诊断" : "开始诊断"}

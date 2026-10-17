@@ -4,6 +4,7 @@ import type { CreatePromptVersion, Prompt, PromptVersion } from "@ai-chat-eval/c
 import { api, getErrorMessage } from "../api/client";
 import { PromptVersionEditor } from "./PromptVersionEditor";
 import { EmptyState, ErrorState, LoadingState } from "./StatusViews";
+import { useProjectAccess } from "./ProjectAccess";
 
 const STATUS_LABELS: Record<PromptVersion["status"], string> = {
   draft: "草稿",
@@ -22,6 +23,7 @@ function formatDate(value: string | null): string {
 }
 
 export function VersionList({ prompt }: { prompt: Prompt }) {
+  const { canEdit } = useProjectAccess();
   const [versions, setVersions] = useState<PromptVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,12 +56,14 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
   }, [prompt.id, reloadKey]);
 
   async function handleCreateVersion(input: CreatePromptVersion) {
+    if (!canEdit) return;
     const created = await api.createPromptVersion(prompt.id, input);
     setVersions((current) => [created, ...current]);
     setEditorParent(undefined);
   }
 
   async function handlePublish(version: PromptVersion) {
+    if (!canEdit || publishingId) return;
     if (
       !window.confirm(`确认发布 ${prompt.name} 的 V${version.version}？发布后可用于正式评测实验。`)
     ) {
@@ -78,7 +82,7 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
     }
   }
 
-  if (editorParent !== undefined) {
+  if (editorParent !== undefined && canEdit) {
     return (
       <PromptVersionEditor
         prompt={prompt}
@@ -101,7 +105,7 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
           className="button button--primary"
           type="button"
           onClick={() => setEditorParent(versions[0] ?? null)}
-          disabled={loading}
+          disabled={loading || !canEdit}
         >
           ＋ 新建版本
         </button>
@@ -121,6 +125,7 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
               className="button button--primary"
               type="button"
               onClick={() => setEditorParent(null)}
+              disabled={!canEdit}
             >
               创建第一个版本
             </button>
@@ -162,6 +167,17 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
                     <small>
                       {version.blocks.reduce((sum, block) => sum + block.content.length, 0)} 字符
                     </small>
+                    <details>
+                      <summary>查看区块内容</summary>
+                      {version.blocks.map((block) => (
+                        <section key={block.id}>
+                          <h3>
+                            {block.name} · {block.id}
+                          </h3>
+                          <pre className="flow-wrap">{block.content}</pre>
+                        </section>
+                      ))}
+                    </details>
                   </td>
                   <td className="summary-cell">{version.changeSummary || "未填写修改说明"}</td>
                   <td>
@@ -176,7 +192,7 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
                         className="button button--secondary"
                         type="button"
                         onClick={() => void handlePublish(version)}
-                        disabled={publishingId !== null}
+                        disabled={publishingId !== null || !canEdit}
                       >
                         {publishingId === version.id ? "发布中…" : "发布"}
                       </button>
@@ -185,6 +201,7 @@ export function VersionList({ prompt }: { prompt: Prompt }) {
                       className="button button--quiet"
                       type="button"
                       onClick={() => setEditorParent(version)}
+                      disabled={!canEdit}
                     >
                       基于此版本新建
                     </button>

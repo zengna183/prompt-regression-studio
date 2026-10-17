@@ -7,6 +7,7 @@ import type {
 
 import { api, getErrorMessage } from "../api/client";
 import { LoadingState } from "./StatusViews";
+import { useProjectAccess } from "./ProjectAccess";
 
 const PAGE_SIZE = 20;
 type ReviewCase = {
@@ -41,6 +42,7 @@ export function DatasetReview({
   version: DatasetVersion;
   onChanged: (version: DatasetVersion) => void;
 }) {
+  const { canEdit, reviewerName: accountName } = useProjectAccess();
   const id = useId();
   const [cases, setCases] = useState<ReviewCase[]>([]);
   const [reviewed, setReviewed] = useState<Set<string>>(new Set());
@@ -103,12 +105,12 @@ export function DatasetReview({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || loading || cases.length === 0 || reviewed.size !== cases.length) return;
+    if (!canEdit || busy || loading || cases.length === 0 || reviewed.size !== cases.length) return;
     setBusy(true);
     setError(null);
     try {
       const payload: ReviewDatasetVersionRequest = {
-        reviewerName: reviewerName.trim(),
+        reviewerName: accountName ? `${accountName.slice(0, 80)}（登录账号）` : reviewerName.trim(),
         reviewNotes: reviewNotes.trim(),
         acknowledged: true,
         cases: cases.map((item, index) => {
@@ -137,7 +139,7 @@ export function DatasetReview({
   }
 
   async function publish() {
-    if (busy || dirty || !version.reviewedAt) return;
+    if (!canEdit || busy || dirty || !version.reviewedAt) return;
     setBusy(true);
     setError(null);
     try {
@@ -151,16 +153,18 @@ export function DatasetReview({
 
   const currentPage = Math.min(page, Math.max(0, Math.ceil(cases.length / PAGE_SIZE) - 1));
   const shown = cases.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
-  const editable = version.status === "draft";
+  const editable = version.status === "draft" && canEdit;
   return (
     <section className="dataset-import" aria-labelledby={`${id}-title`}>
       <h3 id={`${id}-title`}>查看与审核 v{version.version}</h3>
       <p>
-        {version.status !== "draft"
-          ? "此版本已发布，只能查看。"
-          : version.reviewedAt
-            ? `已由 ${version.reviewedBy ?? "审核人"} 确认；仍可修改后生成新版本。`
-            : "逐条查看并勾选确认。修改会创建新版本，原草稿保留。"}
+        {!canEdit
+          ? "你拥有只读权限，可以查看用例，但不能修改、审核或发布。"
+          : version.status !== "draft"
+            ? "此版本已发布，只能查看。"
+            : version.reviewedAt
+              ? `已由 ${version.reviewedBy ?? "审核人"} 确认；仍可修改后生成新版本。`
+              : "逐条查看并勾选确认。修改会创建新版本，原草稿保留。"}
       </p>
       {loading ? <LoadingState label="正在加载用例" /> : null}
       {error ? (
@@ -258,21 +262,25 @@ export function DatasetReview({
           ) : null}
           {editable && (!version.reviewedAt || dirty) ? (
             <>
-              <label htmlFor={`${id}-reviewer`}>
-                审核人（自填；当前尚无个人登录验证）
-                <input
-                  id={`${id}-reviewer`}
-                  required
-                  minLength={2}
-                  maxLength={120}
-                  value={reviewerName}
-                  disabled={busy}
-                  onChange={(event) => {
-                    setReviewerName(event.target.value);
-                    setDirty(true);
-                  }}
-                />
-              </label>
+              {accountName ? (
+                <p>审核人：{accountName}（由服务器记录当前登录账号，不可自填）</p>
+              ) : (
+                <label htmlFor={`${id}-reviewer`}>
+                  审核人（自填；当前尚无个人登录验证）
+                  <input
+                    id={`${id}-reviewer`}
+                    required
+                    minLength={2}
+                    maxLength={120}
+                    value={reviewerName}
+                    disabled={busy}
+                    onChange={(event) => {
+                      setReviewerName(event.target.value);
+                      setDirty(true);
+                    }}
+                  />
+                </label>
+              )}
               <label htmlFor={`${id}-notes`}>
                 审核说明（可选）
                 <textarea
@@ -294,7 +302,7 @@ export function DatasetReview({
                   busy ||
                   cases.length === 0 ||
                   reviewed.size !== cases.length ||
-                  reviewerName.trim().length < 2
+                  (!accountName && reviewerName.trim().length < 2)
                 }
               >
                 {busy ? "正在保存审核…" : "确认审核并保存"}
