@@ -12,6 +12,7 @@ import {
   freePort,
   loadSample,
   managedProcess,
+  networkGate,
   testTargets,
 } from "./system-test-support.mjs";
 
@@ -23,7 +24,7 @@ const report = {
   checks: [],
 };
 const processes = [];
-let database, redis, queue, provider;
+let database, redis, queue, provider, redisGate;
 let api, worker;
 let token;
 const check = async (name, run) => {
@@ -65,6 +66,10 @@ try {
   const tables =
     await database.sql`select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE'`;
   assert.equal(tables.length, 0, "Refusing an existing test schema; provision a fresh database");
+  redisGate = await networkGate(new URL(targets.redisUrl));
+  const apiRedisUrl = new URL(targets.redisUrl);
+  apiRedisUrl.hostname = "127.0.0.1";
+  apiRedisUrl.port = String(redisGate.port);
   const apiPort = await freePort();
   const workerPort = await freePort();
   const base = `http://127.0.0.1:${apiPort}`;
@@ -101,7 +106,10 @@ try {
     DIAGNOSIS_PYTHONPATH: path.join(root, "packages/python/core/src"),
   };
   const spawn = (name, entry) => {
-    const proc = managedProcess(name, [entry], { cwd: root, env });
+    const proc = managedProcess(name, [entry], {
+      cwd: root,
+      env: name === "API" ? { ...env, REDIS_URL: apiRedisUrl.href } : env,
+    });
     processes.push(proc);
     return proc;
   };
@@ -415,31 +423,60 @@ try {
     assert.equal(outputs.count, 0, "Cancellation was overwritten by a late provider response");
   });
   await check(
-    "active database lease defers real queue redelivery; expired lease can resume",
+    "worker crash redelivery waits for database lease and resumes after controlled expiry",
     async () => {
-      await worker.stop();
       const experiment = await plan("Lease recovery", faultDataset);
-      const started = await start(experiment.id);
-      // Controlled database lease fixture; no production records or time settings are changed.
-      await database.sql`update evaluation_runs set status='running', started_at=now() where experiment_id=${experiment.id}`;
-      await database.sql`update experiments set status='running' where id=${experiment.id}`;
+      provider.holdRestart(true);
+      const started = await start(experiment.id, "restart-generator");
+      await eventually(
+        () => provider.count("restart-generator") >= 2,
+        "both workers executing model calls",
+      );
+      await worker.stop(true); // Actual abrupt child-process death, not graceful completion.
       await startWorker();
-      await eventually(async () => {
-        const jobs = await Promise.all(
-          started.evaluationRunIds.map((id) => queue.getJob(`evaluation-${id}`)),
-        );
-        return (
-          jobs.every(Boolean) &&
-          (await Promise.all(jobs.map((j) => j.getState()))).every((state) => state === "delayed")
-        );
-      }, "busy lease jobs delayed instead of acknowledged");
+      await eventually(
+        async () => {
+          const jobs = await Promise.all(
+            started.evaluationRunIds.map((id) => queue.getJob(`evaluation-${id}`)),
+          );
+          return (
+            jobs.every(Boolean) &&
+            (await Promise.all(jobs.map((j) => j.getState()))).every((state) => state === "delayed")
+          );
+        },
+        "stalled jobs redelivered and busy leases delayed instead of acknowledged",
+        90_000,
+      );
       for (const id of started.evaluationRunIds) {
         const job = await queue.getJob(`evaluation-${id}`);
         assert.equal(job.attemptsMade, 0, "Waiting for a lease consumed an error retry");
       }
+      // Accelerate only the isolated DB fixture, after proving the fresh lease was respected.
+      // Production recovery still waits for the current 30-minute DB lease expiry.
       await database.sql`update evaluation_runs set started_at=now()-interval '31 minutes' where experiment_id=${experiment.id}`;
+      provider.holdRestart(false);
       for (const id of started.evaluationRunIds)
         await (await queue.getJob(`evaluation-${id}`)).promote();
+      await assertSuccess(experiment.id, 2);
+    },
+  );
+  await check(
+    "Redis network outage persists outbox and recovers dispatch after reconnection",
+    async () => {
+      redisGate.setEnabled(false);
+      const experiment = await plan("Queue outage", faultDataset);
+      await start(experiment.id);
+      await eventually(
+        async () => {
+          const [row] =
+            await database.sql`select count(*)::int as count from evaluation_run_dispatches d join evaluation_runs r on r.id=d.evaluation_run_id where r.experiment_id=${experiment.id} and d.last_error_code='QUEUE_DISPATCH_FAILED'`;
+          return row.count === 2;
+        },
+        "durable outbox records broker failure",
+        30_000,
+      );
+      assert.equal((await http("GET", expPath(experiment.id))).experiment.status, "queued");
+      redisGate.setEnabled(true);
       await assertSuccess(experiment.id, 2);
     },
   );
@@ -464,6 +501,11 @@ try {
   report.passed = false;
   report.failure = error.message;
   console.error(error);
+  if (process.env.GITHUB_ACTIONS === "true") {
+    console.error(
+      `::error title=System acceptance::${error.message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`,
+    );
+  }
   process.exitCode = 1;
 } finally {
   // Always close children before databases, including after assertion failures.
@@ -471,6 +513,7 @@ try {
   await queue?.close().catch(() => {});
   redis?.disconnect();
   await database?.close().catch(() => {});
+  await redisGate?.close().catch(() => {});
   await provider?.close().catch(() => {});
   report.finishedAt = new Date().toISOString();
   await mkdir(path.join(root, "artifacts"), { recursive: true });

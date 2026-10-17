@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { createServer as createTcpServer, connect } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
 // Never fall back to DATABASE_URL / REDIS_URL or load the developer's .env.
@@ -50,6 +51,44 @@ export async function freePort() {
   const port = await listen(server);
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+/** Cut only a test client's TCP path, without stopping or flushing the real Redis service. */
+export async function networkGate(target) {
+  const sockets = new Set();
+  let enabled = true;
+  const server = createTcpServer((client) => {
+    if (!enabled) {
+      client.destroy();
+      return;
+    }
+    const upstream = connect(Number(target.port || 6379), target.hostname);
+    for (const socket of [client, upstream]) {
+      sockets.add(socket);
+      socket.on("error", () => {
+        client.destroy();
+        upstream.destroy();
+      });
+      socket.on("close", () => {
+        sockets.delete(socket);
+        client.destroy();
+        upstream.destroy();
+      });
+    }
+    client.pipe(upstream).pipe(client);
+  });
+  const port = await listen(server);
+  return {
+    port,
+    setEnabled(value) {
+      enabled = value;
+      if (!value) for (const socket of sockets) socket.destroy();
+    },
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
 }
 
 export function managedProcess(name, args, options) {
