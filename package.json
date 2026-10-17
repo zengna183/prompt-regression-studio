@@ -23,6 +23,8 @@
     "typecheck": "pnpm packages:build && pnpm -r typecheck",
     "test": "pnpm test:python && pnpm packages:build && pnpm -r test",
     "test:python": "node scripts/run-python-tests.mjs",
+    "test:system:guards": "node --test scripts/system-test-support.test.mjs",
+    "test:system": "node scripts/test-system.mjs",
     "lint": "pnpm packages:build && pnpm -r lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
