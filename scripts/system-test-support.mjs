@@ -62,7 +62,7 @@ export async function networkGate(target) {
       client.destroy();
       return;
     }
-    const upstream = connect(Number(target.port || 6379), target.hostname);
+    const upstream = connect(Number(target.port || 6379), target.hostname.replace(/^\[|\]$/gu, ""));
     for (const socket of [client, upstream]) {
       sockets.add(socket);
       socket.on("error", () => {
@@ -130,11 +130,11 @@ export function managedProcess(name, args, options) {
       }
     },
     async stop(force = false) {
-      if (finished) return;
+      if (finished) return closed;
       child.kill(force ? "SIGKILL" : "SIGTERM");
       const timeout = setTimeout(() => child.kill("SIGKILL"), 5_000);
       try {
-        await closed;
+        return await closed;
       } finally {
         clearTimeout(timeout);
       }

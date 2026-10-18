@@ -341,10 +341,18 @@ try {
         [...starts[1].evaluationRunIds].sort(),
       );
       assert.equal(starts[0].evaluationRunIds.length, 2);
-      await api.stop();
+      const apiExit = await api.stop();
+      if (process.platform !== "win32")
+        assert.equal(
+          apiExit.code,
+          0,
+          "API required forced termination instead of graceful shutdown",
+        );
       await startApi(); // Same server-side session and persisted outbox survive the process restart.
       await startWorker();
-      await worker.stop();
+      const workerExit = await worker.stop();
+      if (process.platform !== "win32")
+        assert.equal(workerExit.code, 0, "Worker failed graceful shutdown");
       await startWorker();
       const comparison = await assertSuccess(happy.id, 16);
       assert.equal(comparison.versions.find((v) => v.isBaseline).averageScore, 1);
@@ -364,7 +372,8 @@ try {
     async () => {
       const reportBefore = await diagnose();
       assert.equal(reportBefore.schema_version, "prompt-regression.report/v1alpha1");
-      assert(!JSON.stringify(reportBefore).includes('"verification_status":"supported"'));
+      assert.equal(reportBefore.regression.cases.length, 3);
+      assert(reportBefore.hypotheses.every((h) => h.verification_status !== "supported"));
       const ablation = await http(
         "POST",
         `${expPath(happy.id)}/ablations`,
@@ -374,13 +383,14 @@ try {
       await assertSuccess(ablation.experimentId, 16);
       const verified = await diagnose(true);
       assert(
-        JSON.stringify(verified).includes('"verification_status":"supported"'),
+        verified.hypotheses.some((h) => h.verification_status === "supported"),
         "Recorded revert did not support the changed policy hypothesis",
       );
       const history = await http("GET", `/v1/diagnoses?projectId=${project.id}`);
       assert(history.items.length >= 2);
       const saved = await http("GET", `/v1/diagnoses/${history.items[0].id}`);
-      assert(saved);
+      assert.equal(saved.status, "succeeded");
+      assert.equal(saved.report.report_id, verified.report_id);
     },
   );
   await check("provider 429 retries recover without duplicate stored outputs", async () => {
@@ -402,6 +412,16 @@ try {
       const detail = await settled(experiment.id);
       assert.notEqual(detail.experiment.status, "succeeded");
       assert(detail.runs.every((r) => r.failedCount === 1 && r.succeededCount === 0));
+      const outputs =
+        await database.sql`select o.error_code from generation_outputs o join generation_runs r on r.id=o.generation_run_id where r.experiment_id=${experiment.id}`;
+      assert.equal(outputs.length, 2);
+      assert(
+        outputs.every(
+          (o) =>
+            o.error_code ===
+            (name === "provider timeout" ? "PROVIDER_TIMEOUT" : "EVALUATION_CASE_FAILED"),
+        ),
+      );
       const comparison = await http("GET", `${expPath(experiment.id)}/comparison`);
       assert.equal(comparison.isComplete, false);
       assert(comparison.versions.every((v) => v.observationCount === 0));

@@ -40,15 +40,32 @@ export function createRedisProducerConnection(redisUrl: string): Redis {
 
 export function createEvaluationQueue(redisUrl: string): Queue<EvaluationJob> {
   const connection = createRedisProducerConnection(redisUrl);
-  return new Queue<EvaluationJob>(EVALUATION_QUEUE_NAME, {
-    connection,
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 1_000 },
-      removeOnComplete: { age: 86_400, count: 5_000 },
-      removeOnFail: { age: 604_800, count: 10_000 },
-    },
-  });
+  return new OwnedEvaluationQueue(connection);
+}
+
+/** BullMQ treats supplied Redis instances as shared; this factory owns its producer. */
+class OwnedEvaluationQueue extends Queue<EvaluationJob> {
+  constructor(private readonly producer: Redis) {
+    super(EVALUATION_QUEUE_NAME, {
+      connection: producer,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1_000 },
+        removeOnComplete: { age: 86_400, count: 5_000 },
+        removeOnFail: { age: 604_800, count: 10_000 },
+      },
+    });
+  }
+
+  override async close(): Promise<void> {
+    try {
+      await super.close();
+    } finally {
+      // All producer work must be drained before close. Do not reconnect on shutdown,
+      // including when Redis is unavailable and QUIT could otherwise block forever.
+      this.producer.disconnect(false);
+    }
+  }
 }
 
 export async function enqueueEvaluationRun(
