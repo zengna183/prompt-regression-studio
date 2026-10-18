@@ -86,10 +86,8 @@ describe("worker health server", () => {
     server = await startHealthServer({
       host: "127.0.0.1",
       port: 0,
-      redis: { ping: async () => "PONG" },
-      database: async () => {
-        throw new Error("private DB detail");
-      },
+      redis: { ping: () => Promise.resolve("PONG") },
+      database: () => Promise.reject(new Error("private DB detail")),
       metricsToken: "m".repeat(32),
       state: { isReady: () => true, isShuttingDown: () => false },
       logger: createLoggerStub(),

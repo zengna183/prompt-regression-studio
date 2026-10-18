@@ -94,6 +94,7 @@ jobs:
         run: pnpm db:check
       - run: pnpm format:check
       - run: pnpm test:system:guards
+      - run: pnpm test:operations
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -145,6 +146,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm packages:build
       - run: pnpm --filter @ai-chat-eval/api --filter @ai-chat-eval/worker build
+      - name: Install PostgreSQL 17 backup tools
+        run: |
+          if [ ! -x /usr/lib/postgresql/17/bin/pg_dump ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client-17
+          fi
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
       - run: pnpm test:system
         env:
           TEST_SYSTEM_DATABASE_URL: postgres://eval:eval@127.0.0.1:5432/prs_system_test

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolvePythonExecutable } from "./python-executable.mjs";
 import { fixtureProvider } from "./system-test-provider.mjs";
+import { verifyBackupRecovery } from "./test-backup-recovery.mjs";
 import {
   eventually,
   freePort,
@@ -536,6 +537,21 @@ try {
         await fetch(`http://127.0.0.1:${workerPort}/metrics`, { headers })
       ).text();
       assert(workerMetrics.includes("prs_worker_ready 1"));
+    },
+  );
+  await check(
+    "backup restores all records, verifies encrypted keys and quarantines unfinished work",
+    async () => {
+      await worker.stop();
+      const pending = await plan("Recovery quarantine", faultDataset);
+      await start(pending.id);
+      await api.stop();
+      report.recovery = await verifyBackupRecovery({
+        database,
+        databaseUrl: targets.databaseUrl,
+        encryptionKey: env.MODEL_ENCRYPTION_KEY,
+        directory: path.join(root, "artifacts/backups"),
+      });
     },
   );
   report.passed = true;

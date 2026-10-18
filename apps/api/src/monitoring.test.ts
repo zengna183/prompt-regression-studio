@@ -5,18 +5,20 @@ import { installMonitoring } from "./monitoring.js";
 describe("operational metrics", () => {
   it("requires separate credentials, aggregates status and never labels raw URLs", async () => {
     const app = Fastify();
-    const snapshot = vi.fn(async () => ({
-      queued: 3,
-      running: 2,
-      oldestQueuedSeconds: 12,
-      oldestRunningSeconds: 22,
-      failedLast24Hours: 1,
-      pendingDispatches: 3,
-      failedDispatches: 0,
-      budgetsNearLimit: 1,
-    }));
+    const snapshot = vi.fn(() =>
+      Promise.resolve({
+        queued: 3,
+        running: 2,
+        oldestQueuedSeconds: 12,
+        oldestRunningSeconds: 22,
+        failedLast24Hours: 1,
+        pendingDispatches: 3,
+        failedDispatches: 0,
+        budgetsNearLimit: 1,
+      }),
+    );
     installMonitoring(app, "m".repeat(32), snapshot);
-    app.get("/secret/:value", async () => ({ ok: true }));
+    app.get("/secret/:value", () => ({ ok: true }));
     try {
       expect((await app.inject("/metrics")).statusCode).toBe(401);
       expect(snapshot).not.toHaveBeenCalled();
@@ -37,9 +39,7 @@ describe("operational metrics", () => {
   });
   it("reports unavailable storage without exposing error details or inventing zero backlog", async () => {
     const app = Fastify();
-    installMonitoring(app, "m".repeat(32), async () => {
-      throw new Error("secret connection");
-    });
+    installMonitoring(app, "m".repeat(32), () => Promise.reject(new Error("secret connection")));
     try {
       const response = await app.inject({
         url: "/metrics",
