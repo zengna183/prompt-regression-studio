@@ -149,6 +149,10 @@ jobs:
       - name: Install PostgreSQL 17 backup tools
         run: |
           if [ ! -x /usr/lib/postgresql/17/bin/pg_dump ]; then
+            sudo install -d /usr/share/postgresql-common/pgdg
+            sudo curl --fail --retry 3 -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+            . /etc/os-release
+            echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
             sudo apt-get update
             sudo apt-get install -y postgresql-client-17
           fi
@@ -160,3 +164,17 @@ jobs:
       - name: Print system acceptance report
         if: always()
         run: test ! -f artifacts/system-test-report.json || cat artifacts/system-test-report.json
+
+  deployment:
+    name: Production containers and TLS deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node scripts/test-deployment.mjs
+      - name: Print deployment acceptance report
+        if: always()
+        run: test ! -f artifacts/deployment-test-report.json || cat artifacts/deployment-test-report.json

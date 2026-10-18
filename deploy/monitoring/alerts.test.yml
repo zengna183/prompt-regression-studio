@@ -1,0 +1,32 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prs-worker"}'
+        values: "0+0x5"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PrsServiceUnavailable
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: PrsServiceUnavailable
+        exp_alerts:
+          - exp_labels: { job: prs-worker, severity: critical }
+            exp_annotations:
+              summary: "PRS service cannot be scraped"
+  - interval: 1m
+    input_series:
+      - series: prs_evaluation_oldest_queued_seconds
+        values: "301+0x8"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PrsQueueBacklog
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PrsQueueBacklog
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Evaluation has waited more than five minutes"

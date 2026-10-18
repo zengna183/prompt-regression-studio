@@ -1,0 +1,57 @@
+name: prompt-regression-studio
+x-environment: &environment
+  NODE_ENV: production
+  AUTH_MODE: team
+  DATABASE_URL: ${DATABASE_URL:?Set a dedicated PostgreSQL URL}
+  DATABASE_SSL: "true"
+  REDIS_URL: ${REDIS_URL:?Set a certificate-verified rediss URL}
+  MODEL_ENCRYPTION_KEY: ${MODEL_ENCRYPTION_KEY:?Set the shared model encryption key}
+  MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK: "false"
+  MODEL_PROVIDER_ALLOWED_HOSTS: ${MODEL_PROVIDER_ALLOWED_HOSTS:-}
+  METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:?Set a separate metrics credential}
+  LOG_LEVEL: info
+x-runtime: &runtime
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs: ["/tmp:rw,nosuid,noexec,size=64m"]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  pids_limit: 128
+  stop_grace_period: 40s
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+services:
+  api:
+    <<: *runtime
+    image: prs-api:${PRS_IMAGE_TAG:-local}
+    build: { context: .., target: api }
+    environment:
+      <<: *environment
+      API_HOST: 0.0.0.0
+      API_PORT: "4000"
+      API_DOCS_ENABLED: "false"
+      API_TRUST_PROXY: "true"
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set your exact HTTPS origin}
+    mem_limit: 1g
+    cpus: 2
+  worker:
+    <<: *runtime
+    image: prs-worker:${PRS_IMAGE_TAG:-local}
+    build: { context: .., target: worker }
+    environment:
+      <<: *environment
+      WORKER_HEALTH_HOST: 0.0.0.0
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+    mem_limit: 1g
+    cpus: 2
+  web:
+    <<: *runtime
+    image: prs-web:${PRS_IMAGE_TAG:-local}
+    build: { context: .., target: web }
+    depends_on:
+      api: { condition: service_healthy }
+    ports: ["127.0.0.1:${WEB_PORT:-8080}:8080"]
+    mem_limit: 128m
+    cpus: 1
