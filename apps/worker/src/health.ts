@@ -1,4 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 import type { Logger } from "./logger.js";
 
@@ -15,6 +16,8 @@ export interface HealthServerOptions {
   host: string;
   port: number;
   redis: RedisHealthClient;
+  database?: () => Promise<void>;
+  metricsToken?: string;
   state: HealthState;
   logger: Logger;
 }
@@ -49,6 +52,32 @@ async function isRedisReady(redis: RedisHealthClient): Promise<boolean> {
 }
 
 export async function startHealthServer(options: HealthServerOptions): Promise<Server> {
+  if (options.metricsToken && !/^[^\s,]{32,512}$/u.test(options.metricsToken))
+    throw new Error("METRICS_AUTH_TOKEN must contain 32-512 non-whitespace characters");
+  let databaseProbe: Promise<boolean> | undefined;
+  async function databaseReady(): Promise<boolean> {
+    if (!options.database) return true;
+    databaseProbe ??= options
+      .database()
+      .then(
+        () => true,
+        () => false,
+      )
+      .finally(() => {
+        databaseProbe = undefined;
+      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        databaseProbe,
+        new Promise<false>((resolve) => {
+          timer = setTimeout(() => resolve(false), 1000);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
   const server = createServer((request, response) => {
     void (async () => {
       const method = request.method ?? "GET";
@@ -69,15 +98,55 @@ export async function startHealthServer(options: HealthServerOptions): Promise<S
       }
 
       if (path === "/health/ready") {
+        const [redisUp, databaseUp] = await Promise.all([
+          isRedisReady(options.redis),
+          databaseReady(),
+        ]);
         const ready =
-          !options.state.isShuttingDown() &&
-          options.state.isReady() &&
-          (await isRedisReady(options.redis));
+          !options.state.isShuttingDown() && options.state.isReady() && redisUp && databaseUp;
         sendJson(response, ready ? 200 : 503, {
           status: ready ? "ok" : "not_ready",
           service: "worker",
-          dependencies: { redis: ready ? "up" : "unavailable" },
+          dependencies: {
+            redis: redisUp ? "up" : "unavailable",
+            database: databaseUp ? "up" : "unavailable",
+          },
         });
+        return;
+      }
+
+      if (path === "/metrics" && options.metricsToken) {
+        const token = request.headers.authorization?.match(/^Bearer ([^\s,]+)$/iu)?.[1] ?? "";
+        if (
+          !timingSafeEqual(
+            createHash("sha256").update(token).digest(),
+            createHash("sha256").update(options.metricsToken).digest(),
+          )
+        ) {
+          sendJson(response, 401, { code: "UNAUTHORIZED" });
+          return;
+        }
+        const [redisUp, databaseUp] = await Promise.all([
+          isRedisReady(options.redis),
+          databaseReady(),
+        ]);
+        const values = {
+          prs_worker_ready: Number(
+            options.state.isReady() && !options.state.isShuttingDown() && redisUp && databaseUp,
+          ),
+          prs_worker_database_up: Number(databaseUp),
+          prs_worker_redis_up: Number(redisUp),
+          prs_worker_uptime_seconds: process.uptime(),
+        };
+        response.writeHead(200, {
+          "content-type": "text/plain; version=0.0.4; charset=utf-8",
+          "cache-control": "no-store",
+        });
+        response.end(
+          Object.entries(values)
+            .map(([name, value]) => `# TYPE ${name} gauge\n${name} ${value}\n`)
+            .join(""),
+        );
         return;
       }
 

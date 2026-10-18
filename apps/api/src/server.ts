@@ -14,6 +14,7 @@ import { PythonProcessDiagnosisEngine } from "@prompt-regression/diagnosis-engin
 import { OpenAICompatibleClient } from "@prompt-regression/model-provider";
 
 import { buildApp } from "./app.js";
+import { operationalSnapshot } from "./monitoring.js";
 import { loadApiConfig } from "./config.js";
 import { createDatabaseCatalog } from "./database-catalog.js";
 import { createDatabaseDiagnosisStore } from "./database-diagnosis-store.js";
@@ -94,6 +95,14 @@ const diagnosisEngine = new PythonProcessDiagnosisEngine({
   },
 });
 const app = await buildApp({
+  ...(config.METRICS_AUTH_TOKEN
+    ? {
+        monitoring: {
+          token: config.METRICS_AUTH_TOKEN,
+          snapshot: operationalSnapshot(database.sql),
+        },
+      }
+    : {}),
   ...(config.AUTH_MODE === "team"
     ? {
         teamAuth: {

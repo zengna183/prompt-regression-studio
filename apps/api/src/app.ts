@@ -38,8 +38,10 @@ import {
 } from "@ai-chat-eval/db";
 import { installTeamAuth, type TeamAuth } from "./team-auth.js";
 import { authRoutes } from "./routes/auth.js";
+import { installMonitoring, type OperationalSnapshot } from "./monitoring.js";
 
 export interface BuildAppOptions {
+  monitoring?: { token: string; snapshot: () => Promise<OperationalSnapshot> };
   teamAuth?: TeamAuth;
   catalog: CatalogService;
   diagnosisEngine: DiagnosisEngine;
@@ -90,6 +92,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     genReqId: (request) => normalizeRequestId(request.headers["x-request-id"]),
   });
   app.setValidatorCompiler(TypeBoxValidatorCompiler);
+  if (options.monitoring)
+    installMonitoring(app, options.monitoring.token, options.monitoring.snapshot);
 
   await app.register(helmet, {
     ...(docsEnabled ? { contentSecurityPolicy: false } : {}),

@@ -89,6 +89,7 @@ try {
     API_RATE_LIMIT_MAX: "10000",
     DIAGNOSIS_RATE_LIMIT_MAX: "100",
     LOG_LEVEL: "error",
+    METRICS_AUTH_TOKEN: randomBytes(32).toString("hex"),
     DATASET_GENERATION_MODEL: "",
     MODEL_PROVIDER_API_KEY: "",
     MODEL_PROVIDER_BASE_URL: provider.baseUrl,
@@ -516,6 +517,27 @@ try {
     },
   );
   report.provider = provider.stats();
+  await check(
+    "protected operational metrics reflect real database and worker readiness",
+    async () => {
+      assert.equal((await fetch(`${base}/metrics`)).status, 401);
+      assert.equal(
+        (await fetch(`${base}/metrics`, { headers: { authorization: `Bearer ${token}` } })).status,
+        401,
+      );
+      const headers = { authorization: `Bearer ${env.METRICS_AUTH_TOKEN}` };
+      const metrics = await (await fetch(`${base}/metrics`, { headers })).text();
+      assert(metrics.includes("prs_database_up 1"));
+      assert(metrics.includes("prs_evaluations_queued 0"));
+      assert(metrics.includes("prs_evaluations_running 0"));
+      assert(metrics.includes("prs_evaluations_failed_last_24h 4"));
+      assert(!metrics.includes(providerKey));
+      const workerMetrics = await (
+        await fetch(`http://127.0.0.1:${workerPort}/metrics`, { headers })
+      ).text();
+      assert(workerMetrics.includes("prs_worker_ready 1"));
+    },
+  );
   report.passed = true;
 } catch (error) {
   report.passed = false;

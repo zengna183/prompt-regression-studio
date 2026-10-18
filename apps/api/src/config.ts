@@ -49,6 +49,7 @@ const RawConfigSchema = z
     API_HOST: z.string().min(1).default("127.0.0.1"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
     API_AUTH_TOKEN: optionalSecret,
+    METRICS_AUTH_TOKEN: optionalSecret,
     AUTH_MODE: z.enum(["legacy", "team"]).default("legacy"),
     API_BODY_LIMIT_BYTES: z.coerce
       .number()

@@ -64,7 +64,7 @@ describe("worker health server", () => {
     await expect(response.json()).resolves.toEqual(
       expect.objectContaining({
         status: "ok",
-        dependencies: { redis: "up" },
+        dependencies: { redis: "up", database: "up" },
       }),
     );
   });
@@ -80,5 +80,25 @@ describe("worker health server", () => {
 
     const response = await fetch(`${serverUrl(server)}/health/ready`);
     expect(response.status).toBe(503);
+  });
+
+  it("fails readiness when PostgreSQL is unavailable and protects metrics", async () => {
+    server = await startHealthServer({
+      host: "127.0.0.1",
+      port: 0,
+      redis: { ping: async () => "PONG" },
+      database: async () => {
+        throw new Error("private DB detail");
+      },
+      metricsToken: "m".repeat(32),
+      state: { isReady: () => true, isShuttingDown: () => false },
+      logger: createLoggerStub(),
+    });
+    expect((await fetch(`${serverUrl(server)}/health/ready`)).status).toBe(503);
+    expect((await fetch(`${serverUrl(server)}/metrics`)).status).toBe(401);
+    const metrics = await fetch(`${serverUrl(server)}/metrics`, {
+      headers: { authorization: `Bearer ${"m".repeat(32)}` },
+    });
+    expect(await metrics.text()).toContain("prs_worker_database_up 0");
   });
 });

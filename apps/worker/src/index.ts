@@ -147,6 +147,10 @@ async function main(): Promise<void> {
       host: config.healthHost,
       port: config.healthPort,
       redis,
+      database: async () => {
+        await database.sql`select 1`;
+      },
+      ...(process.env.METRICS_AUTH_TOKEN ? { metricsToken: process.env.METRICS_AUTH_TOKEN } : {}),
       state: {
         isReady: () => ready,
         isShuttingDown: () => shuttingDown,

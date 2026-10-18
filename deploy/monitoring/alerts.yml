@@ -1,0 +1,63 @@
+groups:
+  - name: prompt-regression-studio
+    rules:
+      - alert: PrsServiceUnavailable
+        expr: up{job=~"prs-api|prs-worker"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "PRS service cannot be scraped"
+      - alert: PrsDatabaseUnavailable
+        expr: prs_database_up == 0 or prs_worker_database_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "PostgreSQL is unavailable to a PRS service"
+      - alert: PrsWorkerUnavailable
+        expr: prs_worker_ready == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Worker cannot execute jobs; inspect Redis and database readiness"
+      - alert: PrsQueueBacklog
+        expr: prs_evaluation_oldest_queued_seconds > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Evaluation has waited more than five minutes"
+      - alert: PrsLongRunningEvaluation
+        expr: prs_evaluation_oldest_running_seconds > 1800
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Evaluation exceeds the default lease interval; inspect before retrying"
+      - alert: PrsDispatchFailed
+        expr: prs_dispatches_failed > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "A durable queue dispatch exhausted its retries"
+      - alert: PrsServerErrors
+        expr: sum(rate(prs_http_responses_total{status=~"5.."}[5m])) > 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API server errors are elevated"
+      - alert: PrsAuthenticationFailures
+        expr: sum(rate(prs_http_responses_total{status=~"401|403"}[5m])) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Review failed authentication and access attempts"
+      - alert: PrsRateLimited
+        expr: sum(rate(prs_http_responses_total{status="429"}[5m])) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API rate limiting is sustained"
+      - alert: PrsBudgetNearLimit
+        expr: prs_active_budgets_near_limit > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Estimated experiment reservations exceed 90 percent of budget"
