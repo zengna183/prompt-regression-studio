@@ -66,7 +66,10 @@ pnpm lint
 pnpm test
 pnpm build
 pnpm smoke:diagnosis-api
+pnpm test:system:guards
 ```
+
+For changes to execution, queue delivery, persistence or diagnosis workflows, also run the [isolated real-service acceptance suite](./docs/SYSTEM_TESTING.md). CI provisions dedicated PostgreSQL and Redis instances for it; never point the suite at developer or production data.
 
 Never commit `.env`, provider keys, production prompts/responses, customer data, database dumps, or logs containing sensitive payloads.
 

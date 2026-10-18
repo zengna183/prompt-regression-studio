@@ -8,7 +8,7 @@ It is designed to answer more than “which prompt scored higher?” It asks whe
 
 > **Project status: pre-alpha; not suitable for production decisions.**
 >
-> Evaluation, diagnosis and controlled segment rollback are implemented, with opt-in personal login, project membership roles and API-level project isolation. See [TASKS.md](./TASKS.md) for the latest verified scope. Paid-model acceptance, load/failure testing, monitoring and recovery drills remain outstanding. Use this release locally, on an isolated network, or for controlled team trials; it is not a mature multi-tenant SaaS.
+> Evaluation, diagnosis and controlled segment rollback are implemented, with opt-in personal login, project membership roles and API-level project isolation. Real-service workflows, provider faults, worker crashes, Redis connection loss and bounded concurrency are covered by [system acceptance tests](./docs/SYSTEM_TESTING.md). Paid-model and browser acceptance, production capacity, monitoring and backup/restore drills remain outstanding. See [TASKS.md](./TASKS.md) for the latest verified scope. Use this release locally, on an isolated network, or for controlled team trials; it is not a mature multi-tenant SaaS.
 
 For multiple users, enable `AUTH_MODE=team` using the [team setup instructions](./docs/GETTING_STARTED.md#登录与团队开通). The default `legacy` mode retains shared deployment credentials and does **not** provide personal account isolation.
 
