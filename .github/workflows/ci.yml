@@ -199,6 +199,57 @@ jobs:
         if: always()
         run: test ! -f artifacts/system-test-report.json || cat artifacts/system-test-report.json
 
+  browser:
+    name: Real browser workflow acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: eval
+          POSTGRES_PASSWORD: eval
+          POSTGRES_DB: prs_system_test_browser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eval -d prs_system_test_browser"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm packages:build
+      - run: pnpm --filter @ai-chat-eval/api --filter @ai-chat-eval/worker build
+      - run: pnpm test:browser
+        env:
+          TEST_SYSTEM_DATABASE_URL: postgres://eval:eval@127.0.0.1:5432/prs_system_test_browser
+          TEST_SYSTEM_REDIS_URL: redis://127.0.0.1:6379/15
+      - name: Print browser acceptance report
+        if: always()
+        run: test ! -f artifacts/browser/acceptance.json || cat artifacts/browser/acceptance.json
+
   deployment:
     name: Production containers and TLS deployment
     runs-on: ubuntu-latest
