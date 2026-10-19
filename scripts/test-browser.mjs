@@ -204,15 +204,21 @@ try {
     await experiments().click();
     await expect(page.getByRole("heading", { name: "创建版本对比实验" })).toBeVisible();
     await page.getByLabel("实验名称", { exact: true }).fill("浏览器完整流程");
-    await page.getByLabel("要比较的 Prompt", { exact: true }).selectOption(resources.prompt.id);
     await page
-      .getByLabel("基线版本（原来的版本）", { exact: true })
+      .getByRole("combobox", { name: "要比较的 Prompt", exact: true })
+      .selectOption(resources.prompt.id);
+    await page
+      .getByRole("combobox", { name: "基线版本（原来的版本）", exact: true })
       .selectOption(resources.baseline.id);
     await page
-      .getByLabel("候选版本（想验证的新版本）", { exact: true })
+      .getByRole("combobox", { name: "候选版本（想验证的新版本）", exact: true })
       .selectOption(resources.candidate.id);
-    await page.getByLabel("评测集版本", { exact: true }).selectOption(resources.datasetVersion.id);
-    await page.getByLabel("评判标准版本", { exact: true }).selectOption(resources.framework.id);
+    await page
+      .getByRole("combobox", { name: "评测集版本", exact: true })
+      .selectOption(resources.datasetVersion.id);
+    await page
+      .getByRole("combobox", { name: "评判标准版本", exact: true })
+      .selectOption(resources.framework.id);
     const created = page.waitForResponse(
       (r) => r.url().endsWith(`${projectPath}/experiments`) && r.request().method() === "POST",
     );
@@ -225,8 +231,10 @@ try {
       ["负责评分的模型", "system-judge"],
     ]) {
       const group = page.getByRole("group", { name: label, exact: true });
-      await group.getByLabel("模型连接", { exact: true }).selectOption(resources.connection.id);
-      await group.getByLabel("模型", { exact: true }).selectOption(model);
+      await group
+        .getByRole("combobox", { name: "模型连接", exact: true })
+        .selectOption(resources.connection.id);
+      await group.getByRole("combobox", { name: "模型", exact: true }).selectOption(model);
     }
     const start = page.getByRole("button", { name: "确认并开始评测" });
     await expect(start).toBeDisabled();
@@ -285,12 +293,14 @@ try {
     "diagnose, revert one block, inspect replay and update evidence in browser",
     async () => {
       await page
-        .getByLabel("要诊断的候选版本", { exact: true })
+        .getByRole("combobox", { name: "要诊断的候选版本", exact: true })
         .selectOption(resources.candidate.id);
       const first = await diagnose();
       assert.equal(first.regression.cases.length, 3);
       assert(first.hypotheses.every((h) => h.verification_status !== "supported"));
-      await page.getByLabel("回退哪个段落？", { exact: true }).selectOption("policy");
+      await page
+        .getByRole("combobox", { name: "回退哪个段落？", exact: true })
+        .selectOption("policy");
       const replay = page.getByRole("button", { name: "启动段落验证", exact: true });
       await expect(replay).toBeDisabled();
       await page
@@ -301,9 +311,11 @@ try {
       await expect(page.getByRole("heading", { name: "查看为什么变好或变差" })).toBeVisible({
         timeout: 90_000,
       });
-      await page.getByLabel("历史实验", { exact: true }).selectOption(experimentId);
       await page
-        .getByLabel("要诊断的候选版本", { exact: true })
+        .getByRole("combobox", { name: "历史实验", exact: true })
+        .selectOption(experimentId);
+      await page
+        .getByRole("combobox", { name: "要诊断的候选版本", exact: true })
         .selectOption(resources.candidate.id);
       verified = await diagnose();
       assert(
@@ -346,7 +358,9 @@ try {
       await page.reload();
       const browserToken = await login();
       await experiments().click();
-      await page.getByLabel("历史实验", { exact: true }).selectOption(experimentId);
+      await page
+        .getByRole("combobox", { name: "历史实验", exact: true })
+        .selectOption(experimentId);
       await expect(
         page.getByRole("heading", { name: "浏览器完整流程", exact: true }),
       ).toBeVisible();
@@ -362,7 +376,9 @@ try {
     async () => {
       const expiredToken = await login();
       await experiments().click();
-      await page.getByLabel("历史实验", { exact: true }).selectOption(experimentId);
+      await page
+        .getByRole("combobox", { name: "历史实验", exact: true })
+        .selectOption(experimentId);
       await expect(
         page.getByRole("heading", { name: "浏览器完整流程", exact: true }),
       ).toBeVisible();
