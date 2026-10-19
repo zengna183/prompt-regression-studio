@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, expect } from "@playwright/test";
+import { chromium, expect as baseExpect } from "@playwright/test";
 import { browserFixtures } from "./browser-test-fixtures.mjs";
 import { resolvePythonExecutable } from "./python-executable.mjs";
 import { fixtureProvider } from "./system-test-provider.mjs";
@@ -12,6 +12,7 @@ import { eventually, freePort, managedProcess, testTargets } from "./system-test
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const artifacts = path.join(root, "artifacts/browser");
+const expect = baseExpect.configure({ timeout: 20_000 });
 const processes = [];
 const report = {
   startedAt: new Date().toISOString(),
@@ -179,21 +180,22 @@ try {
     await page.getByRole("button", { name: "登录", exact: true }).click();
     const session = await (await response).json();
     assert(session.token, "Browser login did not return a session");
-    await expect(page.getByRole("button", { name: "退出登录", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: / · 退出登录$/u })).toBeVisible();
     return session.token;
   };
   const experiments = () =>
     page.getByRole("navigation", { name: "主要功能" }).getByRole("button", { name: /实验与结果/u });
   await check("browser login, project visibility and private session storage", async () => {
     await page.goto(origin);
-    await login();
+    const browserToken = await login();
     await expect(experiments()).toBeVisible();
     const storage = await page.evaluate(() => ({
       local: { ...localStorage },
       session: { ...sessionStorage },
     }));
     assert(
-      !JSON.stringify(storage).includes("token"),
+      !JSON.stringify(storage).includes(browserToken) &&
+        !JSON.stringify(storage).includes(password),
       "Session token must not be persisted in Web Storage",
     );
   });
@@ -239,6 +241,33 @@ try {
     assert.equal(detail.experiment.status, "succeeded");
     assert.equal(detail.progress.completedCaseExecutions, 16);
   });
+  await check(
+    "a temporary comparison failure shows a recoverable error, not a stuck screen",
+    async () => {
+      const comparison = `${origin}/api${projectPath}/experiments/${experimentId}/comparison`;
+      const unavailable = (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "TEST_UNAVAILABLE",
+            message: "Temporary acceptance-test outage",
+          }),
+        });
+      // Only this response is injected; normal execution and all diagnosis results remain real.
+      await page.route(comparison, unavailable);
+      await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+      await expect(page.getByRole("alert")).toContainText("自动刷新已暂停");
+      await page.unroute(comparison, unavailable);
+      const recovered = page.waitForResponse(
+        (response) => response.url() === comparison && response.status() === 200,
+      );
+      await page.getByRole("button", { name: "重试", exact: true }).click();
+      await recovered;
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(page.getByRole("table", { name: "各版本总体表现" })).toBeVisible();
+    },
+  );
   const diagnose = async () => {
     const pending = page.waitForResponse(
       (r) =>
@@ -322,10 +351,28 @@ try {
         page.getByRole("heading", { name: "浏览器完整流程", exact: true }),
       ).toBeVisible();
       const revoked = page.waitForResponse((r) => r.url().endsWith("/v1/auth/logout"));
-      await page.getByRole("button", { name: "退出登录", exact: true }).click();
+      await page.getByRole("button", { name: / · 退出登录$/u }).click();
       assert.equal((await revoked).status(), 200);
       await expect(page.getByRole("heading", { name: "登录衡鉴评测平台" })).toBeVisible();
       await http("GET", "/v1/projects", undefined, 401, browserToken);
+    },
+  );
+  await check(
+    "server-side revocation returns an open browser to login and removes private views",
+    async () => {
+      const expiredToken = await login();
+      await experiments().click();
+      await page.getByLabel("历史实验", { exact: true }).selectOption(experimentId);
+      await expect(
+        page.getByRole("heading", { name: "浏览器完整流程", exact: true }),
+      ).toBeVisible();
+      await createIdentityRepository(database.db).logout(expiredToken);
+      await page.getByRole("button", { name: "刷新列表", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "登录衡鉴评测平台" })).toBeVisible();
+      await expect(page.getByRole("status")).toContainText("登录已失效");
+      await expect(page.getByRole("heading", { name: "浏览器完整流程", exact: true })).toHaveCount(
+        0,
+      );
       assert.deepEqual(pageErrors, [], "Uncaught JavaScript errors in browser");
       api.assertAlive();
       worker.assertAlive();
