@@ -50,6 +50,7 @@ pnpm test:system
 - 诊断 3 条退化用例，回退 policy 段落，打开验证实验并重新汇总证据；
 - 实际下载 JSON / Markdown / CSV，核对报告身份和完整 JSON 内容；
 - 刷新后重新登录并读取原实验，退出后检查旧令牌被服务端拒绝；
+- 临时比较接口故障后的可见错误和重试恢复；服务端撤销会话后立即返回登录并卸载私有页面；
 - 检查全程没有未捕获的浏览器 JavaScript 错误。
 
 运行前安装浏览器：`pnpm exec playwright install chromium`（Linux CI 使用 `--with-deps` 安装系统库）。先构建 packages、API 和 Worker，再提供**另一套全新的**专用测试基础设施，环境变量规则与上节相同，然后运行 `pnpm test:browser`。不要和 `test:system` 共用已运行过的数据库 / Redis。

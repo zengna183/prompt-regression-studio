@@ -114,7 +114,7 @@ pnpm test
 | Python `Protocol` + Plugin SDK | 给外部能力提供“标准插座”和版本/信任检查                    | 已有 11 类扩展点与显式加载器；不受信插件未来仍需进程或容器隔离                 |
 | Promptfoo 官方导入器           | 把两次 Promptfoo 评测变成统一 Bundle                       | v3 已实现且保留来源；Langfuse、OpenInference 和通用 CSV 尚未实现               |
 | CLI + 自动化测试               | 让管线在终端和 CI 运行，并在没有真实 LLM 时测试            | JSON/Markdown 输出、跨语言合同测试已可用；后续增加性质测试和性能基线           |
-| React + Vite + TypeScript      | Prompt 管理与诊断结果网页                                  | 上传、运行、持久化历史和证据报告已接通；逐 case 下钻和浏览器 E2E 尚未完成      |
+| React + Vite + TypeScript      | Prompt 管理与诊断结果网页                                  | 主流程 Chromium 验收已通过；逐 case 下钻、空项目逐页验收及窄屏检查待补         |
 | Fastify + TypeBox              | 网页与 Core 之间的 HTTP 入口                               | 个人会话、项目角色、幂等启动、限流和受保护指标已实现；企业账号与共享限流待补   |
 | PostgreSQL + Drizzle           | 保存项目、版本、运行和报告                                 | 版本、诊断和隔离恢复已验证；组织级隔离、迁移升级及时间点恢复仍需完善           |
 | Redis + BullMQ + Node Worker   | 派发真实模型评测并记录结果                                 | 已有加密连接、预估预算、取消和故障重投；付费模型、生产容量与更快租约恢复待验收 |
