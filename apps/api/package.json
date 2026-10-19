@@ -31,7 +31,7 @@
     "@prompt-regression/model-provider": "workspace:*",
     "@sinclair/typebox": "0.34.52",
     "csv-parse": "7.0.3",
-    "fastify": "5.12.4",
+    "fastify": "5.12.7",
     "zod": "4.6.2"
   }
 }

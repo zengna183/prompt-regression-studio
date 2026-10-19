@@ -7,9 +7,15 @@ injectWorkspacePackages: true
 syncInjectedDepsAfterScripts:
   - build
 
-# Keep the compatible 5.x patch that fixes GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p.
+# Security floors within each supported major; keep AJV's fast-uri 3.x separate from 4.x.
 overrides:
-  "brace-expansion@>=5.0.0 <5.0.11": 5.0.11
+  # GHSA-q2hr-2g5m-vwhr: pathological expansion must not monopolize the CPU.
+  "brace-expansion@>=5.0.0 <5.0.12": 5.0.12
+  # GHSA-hrr3-gc8f-f4qj / GHSA-jvvf-x445-j334: URI normalization and mailto headers.
+  "fast-uri@>=3.0.0 <3.1.8": 3.1.8
+  "fast-uri@>=4.0.0 <4.1.5": 4.1.5
+  # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: IP family checks and parse diagnostics.
+  "ip-address@>=10.0.0 <10.7.4": 10.7.4
 
 allowBuilds:
   esbuild: true

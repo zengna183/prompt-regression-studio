@@ -76,7 +76,7 @@ CDN/WAF 或可信反向代理
 - [ ] 日志、指标和报警能发现连续 401、429、500、任务积压和费用异常。
 - [ ] 评测数据有保留期限和删除流程；敏感数据在发送模型厂商前完成脱敏。
 - [ ] 在 GitHub Security 中启用 Secret Scanning、Push Protection、Dependabot Alerts 和 Code Scanning。
-- [ ] 上线版本通过 `pnpm audit --prod --audit-level high`、全部测试和构建。
+- [ ] 上线版本通过 `pnpm audit --prod --audit-level moderate`、全部测试和构建（中危及以上依赖告警阻止 CI 通过）。
 
 ## 当前仍未解决的上线风险
 
