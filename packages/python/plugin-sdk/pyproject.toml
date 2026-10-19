@@ -18,6 +18,9 @@ classifiers = [
 ]
 dependencies = ["prompt-regression-core>=0.1.0a1,<0.2"]
 
+[project.scripts]
+prompt-regression-plugins = "prompt_regression_plugin_sdk.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

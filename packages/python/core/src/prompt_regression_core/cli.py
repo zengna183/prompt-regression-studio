@@ -14,7 +14,8 @@ from .errors import PromptRegressionError
 from .model import HypothesisStatus
 from .parsing import load_bundle, loads_bundle
 from .pipeline import DiagnosisPipeline
-from .reporting import MarkdownReporter
+from .reporting import CsvReporter, MarkdownReporter
+from .strategies import ENGINE_VERSION
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="prompt-regression",
         description="Diagnose paired prompt regressions with evidence-linked ablations.",
     )
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0a1")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {ENGINE_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     validate = subparsers.add_parser(
@@ -44,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     diagnose.add_argument(
         "--format",
-        choices=("json", "markdown"),
+        choices=("json", "markdown", "csv"),
         default="json",
         help="Report format; defaults to machine-readable JSON.",
     )
@@ -53,7 +54,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Return exit code 4 when regressions exist but none pass the evidence gate.",
     )
+    diagnose.add_argument("--max-regressions", type=_nonnegative, help="Return exit code 3 above this regression count, even if a cause is supported.")
+    check = subparsers.add_parser("check", help="Write reports and a machine-readable CI gate result in one run.")
+    check.add_argument("bundle", help="Bundle JSON path, or '-' for standard input.")
+    check.add_argument("--out-dir", type=Path, required=True)
+    check.add_argument("--max-regressions", type=_nonnegative, default=0)
+    check.add_argument("--require-supported-hypothesis", action="store_true")
     return parser
+
+
+def _nonnegative(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a nonnegative integer") from error
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be a nonnegative integer")
+    return parsed
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -73,12 +90,39 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         report = DiagnosisPipeline().run(bundle)
-        if args.format == "markdown" and args.compact:
+        gate_code = 0
+        gate_reason = "passed"
+        if args.max_regressions is not None and len(report.regression.cases) > args.max_regressions:
+            gate_code, gate_reason = 3, "regression_limit_exceeded"
+        elif args.require_supported_hypothesis and report.regression.cases and not any(
+            item.verification_status is HypothesisStatus.SUPPORTED for item in report.hypotheses
+        ):
+            gate_code, gate_reason = 4, "supported_hypothesis_required"
+        if args.command == "check":
+            for filename, payload in (
+                ("report.json", canonical_json(report, pretty=True)),
+                ("report.md", MarkdownReporter().render(report)),
+                ("regressions.csv", CsvReporter().render(report)),
+            ):
+                _atomic_write(args.out_dir / filename, payload)
+            summary = {
+                "schema_version": "prompt-regression.check/v1",
+                "passed": gate_code == 0, "exit_code": gate_code, "reason": gate_reason,
+                "regression_count": len(report.regression.cases),
+                "max_regressions": args.max_regressions,
+                "report_id": report.report_id, "input_bundle_hash": report.input_bundle_hash,
+            }
+            _atomic_write(args.out_dir / "check.json", canonical_json(summary, pretty=True))
+            print(canonical_json(summary))
+            return gate_code
+        if args.format != "json" and args.compact:
             print("error: --compact can only be used with --format json", file=sys.stderr)
             return 2
         payload = (
             MarkdownReporter().render(report)
             if args.format == "markdown"
+            else CsvReporter().render(report)
+            if args.format == "csv"
             else canonical_json(report, pretty=not args.compact)
         )
         if args.out is None:
@@ -93,13 +137,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
-        if args.require_supported_hypothesis and report.regression.cases:
-            if not any(
-                item.verification_status is HypothesisStatus.SUPPORTED
-                for item in report.hypotheses
-            ):
-                return 4
-        return 0
+        return gate_code
     except (PromptRegressionError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

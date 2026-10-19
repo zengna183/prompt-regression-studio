@@ -3,9 +3,37 @@
 from __future__ import annotations
 
 from html import escape
+import csv
+from io import StringIO
 import re
 
 from .model import DiagnosisReport, HypothesisStatus
+
+
+def spreadsheet_cell(value: str) -> str:
+    """Preserve text without allowing spreadsheet formula execution."""
+    dangerous = value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n"))
+    return "'" + value if dangerous else value
+
+
+class CsvReporter:
+    """One row per regression; numeric deltas stay numeric and text stays text."""
+
+    name = "csv"
+    version = "1.0.0"
+
+    def render(self, report: DiagnosisReport) -> str:
+        output = StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(("report_id", "input_bundle_hash", "test_case_id", "kind", "baseline_passed", "candidate_passed", "primary_metric", "primary_delta"))
+        for case in report.regression.cases:
+            writer.writerow((
+                spreadsheet_cell(report.report_id), spreadsheet_cell(report.input_bundle_hash),
+                spreadsheet_cell(case.test_case_id), case.kind.value,
+                str(case.baseline_passed).lower(), str(case.candidate_passed).lower(),
+                spreadsheet_cell(case.primary_metric), case.metric_deltas[case.primary_metric],
+            ))
+        return output.getvalue()
 
 
 _STATUS_LABELS = {
