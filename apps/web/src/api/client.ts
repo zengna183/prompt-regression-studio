@@ -406,11 +406,19 @@ export const api = {
     id: string,
     candidatePromptVersionId: string,
   ): Promise<DiagnosisReport> {
+    // Read fresh links rather than trusting a possibly stale page snapshot. First diagnosis
+    // has no intervention yet; existing evidence must still pass the server's strict checks.
+    const ablations = unwrapList<Ablation>(
+      await request(`${experimentPath(projectId, id)}/ablations`),
+    );
+    const includeAblations = ablations.some(
+      (item) => item.candidatePromptVersionId === candidatePromptVersionId,
+    );
     return parseDiagnosisReport(
       unwrapEntity(
         await request(
           `${experimentPath(projectId, id)}/diagnoses`,
-          post({ candidatePromptVersionId, repetition: 1, includeAblations: true }),
+          post({ candidatePromptVersionId, repetition: 1, includeAblations }),
         ),
       ),
     );

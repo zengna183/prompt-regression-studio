@@ -235,6 +235,55 @@ describe("诊断 API 客户端", () => {
   });
 });
 
+describe("实验诊断按实际验证记录选择证据", () => {
+  it.each([
+    { links: [], includeAblations: false },
+    { links: [{ candidatePromptVersionId: "other" }], includeAblations: false },
+    { links: [{ candidatePromptVersionId: "candidate" }], includeAblations: true },
+  ])(
+    "没有对应验证时先诊断，有对应验证时才读取证据：$includeAblations",
+    async ({ links, includeAblations }) => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse(links))
+        .mockResolvedValueOnce(jsonResponse(diagnosisReportFixture));
+      vi.stubGlobal("fetch", fetchMock);
+      await api.diagnoseExperiment("project", "experiment", "candidate");
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(
+        "http://localhost:4000/v1/projects/project/experiments/experiment/ablations",
+      );
+      expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+        candidatePromptVersionId: "candidate",
+        repetition: 1,
+        includeAblations,
+      });
+    },
+  );
+
+  it("验证记录读取失败时不能冒充没有验证记录", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ code: "UNAVAILABLE" }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      api.diagnoseExperiment("project", "experiment", "candidate"),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("未完成或损坏的验证被拒绝后，不会降级成无证据报告", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([{ candidatePromptVersionId: "candidate" }]))
+      .mockResolvedValueOnce(jsonResponse({ code: "DIAGNOSIS_INPUT_INCOMPLETE" }, 409));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      api.diagnoseExperiment("project", "experiment", "candidate"),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

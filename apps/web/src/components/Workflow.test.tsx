@@ -184,7 +184,7 @@ describe("非技术用户真实表单交互（模拟网络边界，不调用付�
     expect(JSON.parse(posts[0]?.[1]?.body as string)).toEqual({
       candidatePromptVersionId: "prompt-v2",
       repetition: 1,
-      includeAblations: true,
+      includeAblations: false,
     });
     expect(JSON.parse(posts[1]?.[1]?.body as string)).toEqual({
       candidatePromptVersionId: "prompt-v2",
