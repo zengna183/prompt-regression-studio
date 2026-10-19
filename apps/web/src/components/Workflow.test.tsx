@@ -245,7 +245,7 @@ describe("非技术用户真实表单交互（模拟网络边界，不调用付�
     const storage = vi.spyOn(Storage.prototype, "setItem");
     render(<ModelWorkspace project={project} />);
     await user.type(await screen.findByLabelText("连接名称"), "测试连接");
-    const address = screen.getByRole("textbox", { name: "服务地址", exact: true });
+    const address = screen.getByRole("textbox", { name: "服务地址" });
     expect(address.getAttribute("aria-describedby")).toBeTruthy();
     expect(
       document.getElementById(address.getAttribute("aria-describedby")!)?.textContent,

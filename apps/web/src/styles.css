@@ -832,6 +832,8 @@ code {
 }
 
 .version-table-wrap {
+  /* Anchor absolutely positioned screen-reader labels inside the scroll container. */
+  position: relative;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 10px;
