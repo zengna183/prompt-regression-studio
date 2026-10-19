@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const project = `prs-acceptance-${randomBytes(6).toString("hex")}`;
@@ -185,9 +186,20 @@ try {
     );
   }
   passed("Prometheus configuration and alert firing tests pass");
-  await dc("restart", "api", "worker");
+  // Recreate the API as during an upgrade; its IP can change while Web keeps running.
+  await dc("up", "-d", "--force-recreate", "--no-deps", "api");
+  await dc("restart", "worker");
   await dc("up", "-d", "--wait", "--wait-timeout", "120", "api", "worker", "web");
-  const projects = await fetch(`${origin}/api/v1/projects`, { headers });
+  let projects;
+  const deadline = Date.now() + 30_000;
+  do {
+    projects = await fetch(`${origin}/api/v1/projects`, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (projects.ok) break;
+    await delay(500);
+  } while (Date.now() < deadline);
   assert.equal(projects.status, 200);
   assert((await projects.json()).some((item) => item.id === projectId));
   passed("container restart retains the account session and project data");
