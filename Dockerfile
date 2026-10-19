@@ -8,7 +8,7 @@ RUN pnpm --filter @ai-chat-eval/api deploy --prod /out/api && pnpm --filter @ai-
 
 FROM node:22-bookworm-slim AS node-runtime
 
-FROM python:3.12-slim-bookworm AS api
+FROM python:3.14-slim-bookworm AS api
 RUN apt-get update && apt-get install --no-install-recommends -y libstdc++6 libatomic1 ca-certificates && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 app && useradd --uid 1000 --gid app --create-home app
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
