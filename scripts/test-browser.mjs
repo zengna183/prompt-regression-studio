@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, expect as baseExpect } from "@playwright/test";
-import { browserFixtures } from "./browser-test-fixtures.mjs";
+import { browserOnboarding } from "./browser-onboarding.mjs";
 import { resolvePythonExecutable } from "./python-executable.mjs";
 import { fixtureProvider } from "./system-test-provider.mjs";
 import { eventually, freePort, managedProcess, testTargets } from "./system-test-support.mjs";
@@ -17,7 +17,7 @@ const processes = [];
 const report = {
   startedAt: new Date().toISOString(),
   scope:
-    "Chromium + production web build + real API/Worker/Python/PostgreSQL/Redis; API-seeded resources and deterministic local model, not paid-model quality acceptance",
+    "Chromium + production web build + real API/Worker/Python/PostgreSQL/Redis; all resources created through UI from empty project, deterministic local model, not paid-model quality acceptance",
   checks: [],
 };
 let database, redis, provider, browser, page;
@@ -144,9 +144,6 @@ try {
     );
     return data;
   };
-  token = (await http("POST", "/v1/auth/login", { email, password })).token;
-  const resources = await browserFixtures(http, provider, providerKey);
-  const projectPath = `/v1/projects/${resources.project.id}`;
   const vite = "apps/web/node_modules/vite/bin/vite.js";
   const config = "scripts/browser-vite.config.mjs";
   await spawn("production web build", [vite, "build", "--config", config], {
@@ -188,6 +185,7 @@ try {
   await check("browser login, project visibility and private session storage", async () => {
     await page.goto(origin);
     const browserToken = await login();
+    token = browserToken;
     await expect(experiments()).toBeVisible();
     const storage = await page.evaluate(() => ({
       local: { ...localStorage },
@@ -199,6 +197,8 @@ try {
       "Session token must not be persisted in Web Storage",
     );
   });
+  const resources = await browserOnboarding({ page, expect, check, provider, apiKey: providerKey });
+  const projectPath = `/v1/projects/${resources.project.id}`;
   let experimentId;
   await check("create and execute a comparison entirely through browser controls", async () => {
     await experiments().click();
@@ -300,7 +300,7 @@ try {
       assert(first.hypotheses.every((h) => h.verification_status !== "supported"));
       await page
         .getByRole("combobox", { name: "回退哪个段落？", exact: true })
-        .selectOption("policy");
+        .selectOption(resources.policyBlockId);
       const replay = page.getByRole("button", { name: "启动段落验证", exact: true });
       await expect(replay).toBeDisabled();
       await page

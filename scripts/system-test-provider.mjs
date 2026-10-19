@@ -40,15 +40,15 @@ export async function fixtureProvider(apiKey) {
       if (body.model === "system-judge") {
         const input = JSON.parse(body.messages[1].content);
         text = JSON.stringify({
-          scores: [
-            {
-              metricKey: "quality",
-              score: input.actualOutput === "bad" ? 0 : 1,
-              confidence: 1,
-              rationale: "Deterministic fixture score",
-              evidence: [input.actualOutput],
-            },
-          ],
+          scores: input.framework.dimensions.map((dimension) => ({
+            metricKey: dimension.id,
+            score: (input.actualOutput === "bad" ? Math.min : Math.max)(
+              ...dimension.scoringGuide.map((guide) => guide.score),
+            ),
+            confidence: 1,
+            rationale: "Deterministic fixture score",
+            evidence: [input.actualOutput],
+          })),
         });
       } else if (body.model === "fault-judge") {
         text = "not JSON; must not become a successful score";
