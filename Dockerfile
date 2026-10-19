@@ -4,7 +4,7 @@ WORKDIR /workspace
 COPY . .
 ENV VITE_API_URL=/api
 RUN pnpm install --frozen-lockfile && pnpm build
-RUN pnpm --filter @ai-chat-eval/api deploy --legacy --prod /out/api && pnpm --filter @ai-chat-eval/worker deploy --legacy --prod /out/worker
+RUN pnpm --filter @ai-chat-eval/api deploy --prod /out/api && pnpm --filter @ai-chat-eval/worker deploy --prod /out/worker
 
 FROM node:22-bookworm-slim AS node-runtime
 

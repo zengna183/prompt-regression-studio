@@ -456,18 +456,23 @@ try {
       );
       await worker.stop(true); // Actual abrupt child-process death, not graceful completion.
       await startWorker();
+      const observedDelayed = new Set();
       await eventually(
         async () => {
           const jobs = await Promise.all(
             started.evaluationRunIds.map((id) => queue.getJob(`evaluation-${id}`)),
           );
-          return (
-            jobs.every(Boolean) &&
-            (await Promise.all(jobs.map((j) => j.getState()))).every((state) => state === "delayed")
-          );
+          for (const job of jobs) {
+            assert(job, "A crashed evaluation disappeared from the queue");
+            const state = await job.getState();
+            assert(!["completed", "failed"].includes(state), `Busy lease acknowledged as ${state}`);
+            if (state === "delayed") observedDelayed.add(job.id);
+          }
+          // Observe each redelivery; two independent timers need not overlap.
+          return observedDelayed.size === started.evaluationRunIds.length;
         },
         "stalled jobs redelivered and busy leases delayed instead of acknowledged",
-        90_000,
+        150_000,
       );
       for (const id of started.evaluationRunIds) {
         const job = await queue.getJob(`evaluation-${id}`);
