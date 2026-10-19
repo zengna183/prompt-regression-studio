@@ -115,7 +115,7 @@ try {
   await spawn("migration", ["packages/db/dist/migrate.js"]).complete();
   const email = "browser-test@example.invalid";
   const password = randomBytes(24).toString("base64url");
-  await createIdentityRepository(database.db).bootstrap({
+  const account = await createIdentityRepository(database.db).bootstrap({
     email,
     password,
     displayName: "Browser Test",
@@ -197,7 +197,14 @@ try {
       "Session token must not be persisted in Web Storage",
     );
   });
-  const resources = await browserOnboarding({ page, expect, check, provider, apiKey: providerKey });
+  const resources = await browserOnboarding({
+    page,
+    expect,
+    check,
+    provider,
+    apiKey: providerKey,
+    account,
+  });
   const projectPath = `/v1/projects/${resources.project.id}`;
   let experimentId;
   await check("create and execute a comparison entirely through browser controls", async () => {
@@ -219,6 +226,7 @@ try {
     await page
       .getByRole("combobox", { name: "评判标准版本", exact: true })
       .selectOption(resources.framework.id);
+    await resources.fits("comparison plan");
     const created = page.waitForResponse(
       (r) => r.url().endsWith(`${projectPath}/experiments`) && r.request().method() === "POST",
     );
@@ -239,6 +247,7 @@ try {
     const start = page.getByRole("button", { name: "确认并开始评测" });
     await expect(start).toBeDisabled();
     await page.getByRole("checkbox", { name: /我已确认模型和用例数量/u }).check();
+    await resources.fits("execution confirmation");
     await start.click();
     await expect(page.getByRole("heading", { name: "查看为什么变好或变差" })).toBeVisible({
       timeout: 90_000,
@@ -248,6 +257,7 @@ try {
     const detail = await http("GET", `${projectPath}/experiments/${experimentId}`);
     assert.equal(detail.experiment.status, "succeeded");
     assert.equal(detail.progress.completedCaseExecutions, 16);
+    await resources.fits("comparison results");
   });
   await check(
     "a temporary comparison failure shows a recoverable error, not a stuck screen",
@@ -323,6 +333,7 @@ try {
         "Replay did not support the policy hypothesis",
       );
       await expect(page.getByRole("heading", { name: "已支持根因", exact: true })).toBeVisible();
+      await resources.fits("verified diagnosis report");
     },
   );
   await check(

@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useId, useState, type FormEvent } from "react";
 import type { Project } from "@ai-chat-eval/contracts";
 import { api, ApiError, getErrorMessage, type ModelConnection } from "../api/client";
 import { useResource } from "../lib/useResource";
@@ -6,6 +6,7 @@ import { ErrorState, LoadingState } from "./StatusViews";
 import { useProjectAccess } from "./ProjectAccess";
 
 export function ModelWorkspace({ project }: { project: Project }) {
+  const formId = useId();
   const { canManage } = useProjectAccess();
   const resource = useResource(
     useCallback(
@@ -85,33 +86,37 @@ export function ModelWorkspace({ project }: { project: Project }) {
                   disabled={busy}
                 />
               </label>
-              <label>
-                服务地址
-                <input
-                  required
-                  type="url"
-                  maxLength={2048}
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="https://你的模型服务地址/v1"
-                  disabled={busy}
-                />
-                <small>由模型供应商提供的基础地址，不要填写完整的对话请求路径。</small>
-              </label>
-              <label>
-                API Key（供应商提供的调用密钥）
-                <input
-                  required
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  maxLength={512}
-                  value={secret}
-                  onChange={(e) => setSecret(e.target.value)}
-                  disabled={busy}
-                />
-                <small>仅用于提交，保存后不会回显；不会存入浏览器的本地存储。</small>
-              </label>
+              <label htmlFor={`${formId}-url`}>服务地址</label>
+              <input
+                id={`${formId}-url`}
+                aria-describedby={`${formId}-url-help`}
+                required
+                type="url"
+                maxLength={2048}
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://你的模型服务地址/v1"
+                disabled={busy}
+              />
+              <small id={`${formId}-url-help`}>
+                由模型供应商提供的基础地址，不要填写完整的对话请求路径。
+              </small>
+              <label htmlFor={`${formId}-secret`}>API Key（供应商提供的调用密钥）</label>
+              <input
+                id={`${formId}-secret`}
+                aria-describedby={`${formId}-secret-help`}
+                required
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={512}
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                disabled={busy}
+              />
+              <small id={`${formId}-secret-help`}>
+                仅用于提交，保存后不会回显；不会存入浏览器的本地存储。
+              </small>
               <label>
                 可用模型名称
                 <textarea

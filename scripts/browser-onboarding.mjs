@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 /** Every resource is created through the UI; HTTP responses only identify and verify it. */
-export async function browserOnboarding({ page, expect, check, provider, apiKey }) {
+export async function browserOnboarding({ page, expect, check, provider, apiKey, account }) {
   const navigate = (title) =>
     page
       .getByRole("navigation", { name: "主要功能" })
@@ -219,7 +219,7 @@ export async function browserOnboarding({ page, expect, check, provider, apiKey 
         200,
       );
       assert(reviewed.reviewedAt);
-      assert.equal(reviewed.reviewedBy, "Browser Test");
+      assert.equal(reviewed.reviewedBy, `${account.displayName.slice(0, 80)} (${account.id})`);
       datasetVersion = await submit(
         `/dataset-versions/${reviewed.id}/publish`,
         () => page.getByRole("button", { name: "发布已审核版本", exact: true }).click(),

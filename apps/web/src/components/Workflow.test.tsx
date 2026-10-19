@@ -245,8 +245,15 @@ describe("非技术用户真实表单交互（模拟网络边界，不调用付�
     const storage = vi.spyOn(Storage.prototype, "setItem");
     render(<ModelWorkspace project={project} />);
     await user.type(await screen.findByLabelText("连接名称"), "测试连接");
-    await user.type(screen.getByLabelText(/服务地址/), "https://example.com/v1");
-    await user.type(screen.getByLabelText(/API Key/), "test-secret-only");
+    const address = screen.getByRole("textbox", { name: "服务地址", exact: true });
+    expect(address.getAttribute("aria-describedby")).toBeTruthy();
+    expect(
+      document.getElementById(address.getAttribute("aria-describedby")!)?.textContent,
+    ).toContain("不要填写完整的对话请求路径");
+    await user.type(address, "https://example.com/v1");
+    const secret = screen.getByLabelText("API Key（供应商提供的调用密钥）", { exact: true });
+    expect(secret.getAttribute("aria-describedby")).toBeTruthy();
+    await user.type(secret, "test-secret-only");
     await user.type(screen.getByLabelText("可用模型名称"), "model-a,model-a,model-b");
     await user.click(screen.getByRole("button", { name: "保存连接" }));
     expect(save).toHaveBeenCalledWith(
