@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prompt-regression-studio.dev/contracts/ci-check/v1.schema.json",
+  "title": "Prompt regression CI gate result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "passed",
+    "exit_code",
+    "reason",
+    "regression_count",
+    "max_regressions",
+    "report_id",
+    "input_bundle_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "prompt-regression.check/v1" },
+    "passed": { "type": "boolean" },
+    "exit_code": { "enum": [0, 3, 4] },
+    "reason": { "enum": ["passed", "regression_limit_exceeded", "supported_hypothesis_required"] },
+    "regression_count": { "type": "integer", "minimum": 0 },
+    "max_regressions": { "type": "integer", "minimum": 0 },
+    "report_id": { "type": "string", "minLength": 1, "pattern": "^\\S+$" },
+    "input_bundle_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "exit_code": { "const": 0 } } },
+      "then": { "properties": { "passed": { "const": true }, "reason": { "const": "passed" } } }
+    },
+    {
+      "if": { "properties": { "exit_code": { "const": 3 } } },
+      "then": {
+        "properties": {
+          "passed": { "const": false },
+          "reason": { "const": "regression_limit_exceeded" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "exit_code": { "const": 4 } } },
+      "then": {
+        "properties": {
+          "passed": { "const": false },
+          "reason": { "const": "supported_hypothesis_required" }
+        }
+      }
+    }
+  ]
+}

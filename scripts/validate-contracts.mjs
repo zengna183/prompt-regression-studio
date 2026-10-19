@@ -8,6 +8,7 @@ const paths = {
   bundleSchema: "contracts/regression-bundle/v1alpha1.schema.json",
   reportSchema: "contracts/diagnosis-report/v1alpha1.schema.json",
   pluginManifestSchema: "contracts/plugin-manifest/v1alpha1.schema.json",
+  checkSchema: "contracts/ci-check/v1.schema.json",
   promptfooManifest: "plugins/official/promptfoo/prompt-regression-plugin.json",
   exampleBundle: "examples/missing-information-regression/regression-bundle.json",
 };
@@ -44,12 +45,26 @@ const [bundleSchema, reportSchema, pluginManifestSchema, exampleBundle, promptfo
 const validateBundle = ajv.compile(bundleSchema);
 const validateReport = ajv.compile(reportSchema);
 const validatePluginManifest = ajv.compile(pluginManifestSchema);
+const validateCheck = ajv.compile(await readJson(paths.checkSchema));
 assertValid(validateBundle, exampleBundle, paths.exampleBundle);
 assertValid(validatePluginManifest, promptfooManifest, paths.promptfooManifest);
 
-const reportPath = process.argv.slice(2).find((argument) => argument !== "--");
+const [reportPath, checkPath] = process.argv.slice(2).filter((argument) => argument !== "--");
 if (reportPath) {
   assertValid(validateReport, await readJson(reportPath), reportPath);
 } else {
   process.stdout.write("valid: diagnosis report schema compiled in strict mode\n");
+}
+if (checkPath) {
+  const result = await readJson(checkPath);
+  assertValid(validateCheck, result, checkPath);
+  if (reportPath) {
+    const report = await readJson(reportPath);
+    if (
+      result.report_id !== report.report_id ||
+      result.input_bundle_hash !== report.input_bundle_hash ||
+      result.regression_count !== report.regression.cases.length
+    )
+      throw new Error("CI result does not refer to the supplied diagnosis report");
+  }
 }

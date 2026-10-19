@@ -12,6 +12,8 @@ It is designed to answer more than “which prompt scored higher?” It asks whe
 
 For multiple users, enable `AUTH_MODE=team` using the [team setup instructions](./docs/GETTING_STARTED.md#登录与团队开通). The default `legacy` mode retains shared deployment credentials and does **not** provide personal account isolation.
 
+See [CLI and CI integration](./docs/CLI_AND_CI.md) for regression gates, plugin inspection and the reusable GitHub Action. Web diagnosis reports offer complete JSON, a readable Markdown summary and regression-case CSV downloads.
+
 ## Why this is not another general Eval clone
 
 Promptfoo, Langfuse, Phoenix, and related projects already cover important parts of evaluation execution, observability, and experiment analysis. This project focuses specifically on **post-Eval regression diagnosis**: it consumes pinned baseline and candidate results, creates falsifiable root-cause hypotheses, and gathers evidence through controlled ablations.

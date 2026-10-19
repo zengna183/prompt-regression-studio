@@ -2,13 +2,14 @@
 
 这里的文件规定了 Prompt 回归诊断核心与导入器、运行器、界面之间交换的 JSON 形状。它们使用 JSON Schema Draft 2020-12，不依赖某一家模型、评测平台或编程语言。
 
-## 三份合同
+## 交换合同
 
-| 文件                                     | 根 `schema_version`                          | 用途                                                                                           |
-| ---------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `regression-bundle/v1alpha1.schema.json` | `prompt-regression.bundle/v1alpha1`          | 输入。把项目、Prompt、测试集、基线与候选评测，以及可重复使用的模拟消融结果打成一个不可变快照。 |
-| `diagnosis-report/v1alpha1.schema.json`  | `prompt-regression.report/v1alpha1`          | 输出。保存回归事实、Prompt 变化、失败聚类、根因假设、消融计划与运行证据。                      |
-| `plugin-manifest/v1alpha1.schema.json`   | `prompt-regression/plugin-manifest/v1alpha1` | 插件清单。声明插件身份、Core 兼容范围和明确入口，不负责安装或执行插件。                        |
+| 文件                                     | 根 `schema_version`                          | 用途                                                                                                                         |
+| ---------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `regression-bundle/v1alpha1.schema.json` | `prompt-regression.bundle/v1alpha1`          | 输入。把项目、Prompt、测试集、基线与候选评测，以及可重复使用的模拟消融结果打成一个不可变快照。                               |
+| `diagnosis-report/v1alpha1.schema.json`  | `prompt-regression.report/v1alpha1`          | 输出。保存回归事实、Prompt 变化、失败聚类、根因假设、消融计划与运行证据。                                                    |
+| `plugin-manifest/v1alpha1.schema.json`   | `prompt-regression/plugin-manifest/v1alpha1` | 插件清单。声明插件身份、Core 兼容范围和明确入口，不负责安装或执行插件。                                                      |
+| `ci-check/v1.schema.json`                | `prompt-regression.check/v1`                 | CLI 检查结果；固定退出码、数量、报告 ID 和输入指纹。只在数据有效且报告写入完成后生成，退出码 2 的输入/运行错误没有成功结果。 |
 
 `schema_version` 是解析入口，也是兼容性开关。只有根对象携带它；内部对象随根合同一起演进，避免每一层重复版本号。`bundle_id` 与 `report_id` 分别是输入、输出根对象的稳定 ID。
 

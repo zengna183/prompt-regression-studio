@@ -34,7 +34,7 @@
   - [x] 15.1 独立凭证保护的运行指标、任务积压和依赖告警，Prometheus 配置及规则触发测试通过
   - [x] 15.2 数据库备份、隔离恢复与 14 张表的数据指纹校验；密钥解密、旧会话撤销、未完成任务隔离、损坏文件与非空目标拒绝均通过
   - [x] 15.3 真实生产容器、TLS 依赖、非 root 运行、网页登录与 Python 诊断、容器重建后的代理恢复和数据保留均通过 CI
-- [ ] 16. CLI、插件、CI 接入与导出完善
-  - [ ] 16.1 命令行回归门禁、稳定退出码与 JSON / Markdown / CSV 导出
-  - [ ] 16.2 插件清单检查、安装包与 Promptfoo 导入联合验证
-  - [ ] 16.3 可复用 GitHub Action、网页报告下载与接入验收
+- [x] 16. CLI、插件、CI 接入与导出完善（[联合 CI 通过](https://github.com/zengna183/prompt-regression-studio/actions/runs/39211195534)；[接入说明](./docs/CLI_AND_CI.md)）
+  - [x] 16.1 命令行回归门禁、稳定退出码与 JSON / Markdown / CSV 导出；找出根因不豁免退化门槛，CSV 文本防公式注入
+  - [x] 16.2 插件清单与兼容性检查、默认拒绝隐式执行；从 wheel 安装后验证 CLI、显式信任加载和 Promptfoo V3 导入
+  - [x] 16.3 可复用 GitHub Action、网页报告下载、错误输入与旧输出隔离；实际 Action、76 项 Python 测试、68 项前端测试和完整 CI / CodeQL 通过

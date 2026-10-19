@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Added
 
+- Private API/Worker metrics and tested Prometheus alerts, database backup with isolated recovery checks, and production containers with TLS dependency and restart acceptance.
+- CLI regression gates, a versioned CI result contract, spreadsheet-safe CSV export, plugin inspection and a reusable GitHub Action verified against installed wheels.
+- Web report downloads for complete JSON, a readable Markdown summary and regression-case CSV.
+
 - Seven accepted architecture decisions covering the diagnosis boundary, Python reference core, versioned contracts, ports and adapters, the hypothesis/evidence state machine, third-party reuse controls, and the constrained Node-to-Python process boundary.
 - A third-party notices file and machine-readable code-provenance inventory. No third-party code is copied in this slice.
 - A dependency-free Python 3.12 reference core with explicit diagnosis domain objects and vendor-neutral extension ports.

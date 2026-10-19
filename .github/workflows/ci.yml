@@ -120,8 +120,8 @@ jobs:
       - name: Produce report for cross-language contract validation
         env:
           PYTHONPATH: packages/python/core/src
-        run: python -m prompt_regression_core diagnose examples/missing-information-regression/regression-bundle.json --out /tmp/diagnosis-report.json
-      - run: pnpm contracts:check -- /tmp/diagnosis-report.json
+        run: python -m prompt_regression_core check examples/missing-information-regression/regression-bundle.json --out-dir /tmp/prs-contract --max-regressions 2
+      - run: pnpm contracts:check -- /tmp/prs-contract/report.json /tmp/prs-contract/check.json
       - name: Validate database migration metadata
         env:
           DATABASE_URL: postgres://eval:eval@localhost:5432/eval_studio
