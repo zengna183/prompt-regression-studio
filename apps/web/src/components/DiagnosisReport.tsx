@@ -5,6 +5,7 @@ import type {
   PromptChange,
   RootCauseHypothesis,
 } from "../diagnosis/types";
+import { downloadReport } from "../diagnosis/export";
 
 interface DiagnosisReportViewProps {
   report: DiagnosisReport;
@@ -62,6 +63,18 @@ export function DiagnosisReportView({ report }: DiagnosisReportViewProps) {
           <span aria-hidden="true">✓</span> 已完成
         </span>
       </header>
+
+      <div className="flow-actions" aria-label="下载诊断报告">
+        <button className="button button--quiet" onClick={() => downloadReport(report, "json")}>
+          下载完整数据（JSON）
+        </button>
+        <button className="button button--quiet" onClick={() => downloadReport(report, "markdown")}>
+          下载可读摘要（Markdown）
+        </button>
+        <button className="button button--quiet" onClick={() => downloadReport(report, "csv")}>
+          下载退化用例（CSV）
+        </button>
+      </div>
 
       <dl className="report-summary" aria-label="诊断摘要">
         <SummaryMetric label="回归用例" value={report.regression.cases.length} />

@@ -52,6 +52,40 @@ jobs:
         run: |
           python -m prompt_regression_core validate examples/missing-information-regression/regression-bundle.json
           python -m prompt_regression_core diagnose examples/missing-information-regression/regression-bundle.json --out /tmp/diagnosis-report.json --require-supported-hypothesis
+      - name: Verify installed wheels and external CI runner
+        run: |
+          python -m venv "$RUNNER_TEMP/prs-packages"
+          "$RUNNER_TEMP/prs-packages/bin/python" -m pip install --no-index --find-links dist/python prompt-regression-core prompt-regression-plugin-sdk prompt-regression-importer-promptfoo
+          "$RUNNER_TEMP/prs-packages/bin/python" scripts/test-installed-packages.py
+
+  regression-action:
+    name: Reusable regression Action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reject a regressed prompt even with an explained cause
+        id: rejected
+        continue-on-error: true
+        uses: ./.github/actions/prompt-regression
+        with:
+          bundle: examples/missing-information-regression/regression-bundle.json
+          output-directory: artifacts/rejected-prompt
+      - name: Verify rejection includes reports and outputs
+        env:
+          CHECK_OUTCOME: ${{ steps.rejected.outcome }}
+          GATE_PASSED: ${{ steps.rejected.outputs.passed }}
+        run: |
+          test "$CHECK_OUTCOME" = failure
+          test "$GATE_PASSED" = false
+          test -f artifacts/rejected-prompt/report.json
+          test -f artifacts/rejected-prompt/report.md
+          test -f artifacts/rejected-prompt/regressions.csv
+      - name: Apply an explicit regression tolerance
+        uses: ./.github/actions/prompt-regression
+        with:
+          bundle: examples/missing-information-regression/regression-bundle.json
+          output-directory: artifacts/tolerated-prompt
+          max-regressions: "2"
 
   verify:
     name: TypeScript foundation

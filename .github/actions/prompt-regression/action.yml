@@ -1,0 +1,47 @@
+name: Prompt regression check
+description: Check a paired bundle or Promptfoo import request and export evidence reports.
+inputs:
+  bundle:
+    description: JSON path relative to the checked-out consumer repository.
+    required: true
+  input-format:
+    description: canonical or promptfoo
+    default: canonical
+  max-regressions:
+    description: Maximum allowed regression cases. Explaining a cause does not waive this limit.
+    default: "0"
+  require-supported-hypothesis:
+    description: Also require at least one supported hypothesis when regressions exist.
+    default: "false"
+  output-directory:
+    description: New report directory relative to the consumer repository; must not already exist.
+    default: artifacts/prompt-regression
+outputs:
+  report-directory:
+    description: Absolute directory with report.json, report.md, regressions.csv and check.json.
+    value: ${{ steps.check.outputs.report-directory }}
+  regression-count:
+    description: Number of regression cases.
+    value: ${{ steps.check.outputs.regression-count }}
+  passed:
+    description: Whether the configured gate passed.
+    value: ${{ steps.check.outputs.passed }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+    - name: Install the bundled core and official importer
+      shell: bash
+      run: python -m pip install "$GITHUB_ACTION_PATH/../../../packages/python/core" "$GITHUB_ACTION_PATH/../../../packages/python/plugin-sdk" "$GITHUB_ACTION_PATH/../../../plugins/official/promptfoo"
+    - name: Run the regression gate
+      id: check
+      shell: bash
+      env:
+        PRS_BUNDLE: ${{ inputs.bundle }}
+        PRS_INPUT_FORMAT: ${{ inputs.input-format }}
+        PRS_MAX_REGRESSIONS: ${{ inputs.max-regressions }}
+        PRS_REQUIRE_SUPPORTED: ${{ inputs.require-supported-hypothesis }}
+        PRS_OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+      run: python "$GITHUB_ACTION_PATH/run.py"

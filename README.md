@@ -1,6 +1,6 @@
 # Prompt Regression Studio
 
-[English](./README.en.md) · [本地启动](./docs/GETTING_STARTED.md) · [架构设计](./docs/ARCHITECTURE.md) · [安全部署](./docs/SECURITY_DEPLOYMENT.md) · [数据合同](./contracts/README.md) · [架构决策](./docs/adr/) · [参与贡献](./CONTRIBUTING.md)
+[English](./README.en.md) · [本地启动](./docs/GETTING_STARTED.md) · [架构设计](./docs/ARCHITECTURE.md) · [安全部署](./docs/SECURITY_DEPLOYMENT.md) · [部署与备份](./docs/OPERATIONS.md) · [数据合同](./contracts/README.md) · [架构决策](./docs/adr/) · [参与贡献](./CONTRIBUTING.md)
 
 一个开源、证据优先的 LLM（大语言模型）Prompt（提示词）回归诊断框架。
 
@@ -8,7 +8,7 @@
 
 > **项目状态：pre-alpha（公开测试前的早期阶段），不可用于生产决策。**
 >
-> 已有可运行的评测、诊断和段落回退链路，以及可选的个人登录、项目成员角色和接口隔离。真实服务链路、模型故障、进程崩溃、队列断网及有界并发已纳入 [系统验收](./docs/SYSTEM_TESTING.md)；真实付费模型、浏览器全流程、生产容量、监控及备份恢复仍待验收。最新完成范围以 [任务清单](./TASKS.md) 为准。当前版本适合本地、内网或受控团队试用，不代表已经达到成熟 SaaS 程度。
+> 已有可运行的评测、诊断和段落回退链路，以及可选的个人登录、项目成员角色和接口隔离。真实服务链路、模型故障、进程崩溃、队列断网及有界并发已纳入 [系统验收](./docs/SYSTEM_TESTING.md)；受保护的监控、隔离备份恢复和生产容器已通过 [部署验收](./docs/OPERATIONS.md)。真实付费模型、浏览器全流程、实际公网环境及生产容量仍待验收。最新完成范围以 [任务清单](./TASKS.md) 为准。当前版本适合本地、内网或受控团队试用，不代表已经达到成熟 SaaS 程度。
 
 多人使用请按[登录与团队开通](./docs/GETTING_STARTED.md#登录与团队开通)启用 `AUTH_MODE=team`。默认 `legacy` 保留旧的共享访问凭证模式，**不提供个人账号隔离**；不要把这个模式当成公开多人服务。
 
@@ -113,9 +113,9 @@ pnpm test
 | Promptfoo 官方导入器           | 把两次 Promptfoo 评测变成统一 Bundle                       | v3 已实现且保留来源；Langfuse、OpenInference 和通用 CSV 尚未实现               |
 | CLI + 自动化测试               | 让管线在终端和 CI 运行，并在没有真实 LLM 时测试            | JSON/Markdown 输出、跨语言合同测试已可用；后续增加性质测试和性能基线           |
 | React + Vite + TypeScript      | Prompt 管理与诊断结果网页                                  | 上传、运行、持久化历史和证据报告已接通；逐 case 下钻和浏览器 E2E 尚未完成      |
-| Fastify + TypeBox              | 网页与 Core 之间的 HTTP 入口                               | 已有部署级 Token、限流、安全响应头和资源边界；账号权限、幂等和异步任务仍未完成 |
-| PostgreSQL + Drizzle           | 保存项目、版本、运行和报告                                 | 一等诊断记录与初始迁移已加入；仍需备份恢复、升级演练和租户隔离测试             |
-| Redis + BullMQ + Node Worker   | 现有后台任务队列和 Worker 生命周期基础                     | 诊断任务、真实 provider/evaluator（模型/评测器）适配器、限流和费用控制尚未实现 |
+| Fastify + TypeBox              | 网页与 Core 之间的 HTTP 入口                               | 个人会话、项目角色、幂等启动、限流和受保护指标已实现；企业账号与共享限流待补   |
+| PostgreSQL + Drizzle           | 保存项目、版本、运行和报告                                 | 版本、诊断和隔离恢复已验证；组织级隔离、迁移升级及时间点恢复仍需完善           |
+| Redis + BullMQ + Node Worker   | 派发真实模型评测并记录结果                                 | 已有加密连接、预估预算、取消和故障重投；付费模型、生产容量与更快租约恢复待验收 |
 
 短期不需要更换 React、Fastify、PostgreSQL 或 BullMQ；真正需要改变的是边界：诊断语义留在稳定 Core，Web/API/Worker/数据库通过版本化合同和 ports（接口）连接它。这样以后替换模型厂商、队列或数据库时，不必重写“什么算回归、什么算证据”。具体原因记录在 [ADR 0001：诊断层边界](./docs/adr/0001-diagnosis-layer-boundary.md)、[ADR 0002：Python 参考核心](./docs/adr/0002-python-reference-core.md)和[ADR 0004：端口与适配器](./docs/adr/0004-ports-and-adapters.md)。
 
