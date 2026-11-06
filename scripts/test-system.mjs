@@ -423,6 +423,14 @@ try {
       );
       const history = await http("GET", `/v1/diagnoses?projectId=${project.id}`);
       assert(history.items.length >= 2);
+      const firstPage = await http("GET", `/v1/diagnoses?projectId=${project.id}&limit=1&offset=0`);
+      const secondPage = await http(
+        "GET",
+        `/v1/diagnoses?projectId=${project.id}&limit=1&offset=1`,
+      );
+      assert.equal(firstPage.items.length, 1);
+      assert.equal(secondPage.items.length, 1);
+      assert.notEqual(firstPage.items[0].id, secondPage.items[0].id);
       const saved = await http("GET", `/v1/diagnoses/${history.items[0].id}`);
       assert.equal(saved.status, "succeeded");
       assert.equal(saved.report.report_id, verified.report_id);

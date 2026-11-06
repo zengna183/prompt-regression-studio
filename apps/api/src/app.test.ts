@@ -740,6 +740,31 @@ describe("API", () => {
     expect(list.json()).toMatchObject({
       items: [{ id: runId, bundleId: "bundle_test", status: "succeeded" }],
     });
+    const read = vi.spyOn(store, "list");
+    const paged = await app.inject({
+      method: "GET",
+      url: "/v1/diagnoses?limit=1&offset=0&status=succeeded",
+    });
+    expect(paged.statusCode).toBe(200);
+    expect(paged.json()).toMatchObject({ items: [{ id: runId }] });
+    expect(read).toHaveBeenLastCalledWith({ limit: 1, offset: 0, status: "succeeded" });
+    const beyond = await app.inject({ method: "GET", url: "/v1/diagnoses?limit=1&offset=1" });
+    expect(beyond.statusCode).toBe(200);
+    expect(beyond.json()).toEqual({ items: [] });
+    for (const query of [
+      "limit=0",
+      "limit=201",
+      "limit=1e2",
+      "offset=-1",
+      "offset=1.5",
+      "offset=100001",
+      "limit=1&limit=2",
+    ]) {
+      expect((await app.inject({ method: "GET", url: `/v1/diagnoses?${query}` })).statusCode).toBe(
+        400,
+      );
+    }
+    expect(read).toHaveBeenCalledTimes(2);
 
     const detail = await app.inject({ method: "GET", url: `/v1/diagnoses/${String(runId)}` });
     expect(detail.statusCode).toBe(200);

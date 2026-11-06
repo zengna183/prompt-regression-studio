@@ -43,8 +43,11 @@ const ListDiagnosesQuerySchema = Type.Object(
   {
     projectId: Type.Optional(Type.String({ format: "uuid" })),
     status: Type.Optional(DiagnosisStatusSchema),
-    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })),
-    offset: Type.Optional(Type.Integer({ minimum: 0, default: 0 })),
+    // URL query values arrive as strings under the strict TypeBox compiler.
+    limit: Type.Optional(
+      Type.String({ pattern: "^(?:[1-9][0-9]?|1[0-9]{2}|200)$", default: "50" }),
+    ),
+    offset: Type.Optional(Type.String({ pattern: "^(?:0|[1-9][0-9]{0,4}|100000)$", default: "0" })),
   },
   { additionalProperties: false },
 );
@@ -145,7 +148,16 @@ export function diagnosisRoutes(options: DiagnosisRouteOptions): FastifyPluginAs
             querystring: ListDiagnosesQuerySchema,
           },
         },
-        async (request) => ({ items: await store.list(request.query) }),
+        async (request) => {
+          const { limit, offset, ...filters } = request.query;
+          return {
+            items: await store.list({
+              ...filters,
+              limit: Number(limit ?? "50"),
+              offset: Number(offset ?? "0"),
+            }),
+          };
+        },
       );
 
       app.get(
