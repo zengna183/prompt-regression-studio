@@ -603,6 +603,94 @@ export const ExperimentComparisonSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ExperimentCaseQuerySchema = Type.Object(
+  {
+    // URL query values are strings; the strict TypeBox validator does not coerce them.
+    offset: Type.Optional(
+      Type.String({ pattern: "^(?:0|[1-9][0-9]{0,2}|[1-4][0-9]{3}|5000)$", default: "0" }),
+    ),
+    limit: Type.Optional(Type.String({ pattern: "^(?:[1-9]|1[0-9]|20)$", default: "5" })),
+    repetition: Type.Optional(Type.String({ pattern: "^(?:[1-9][0-9]?|100)$", default: "1" })),
+  },
+  { additionalProperties: false },
+);
+
+const NullableTextSchema = Type.Union([Type.String(), Type.Null()]);
+export const CaseScoreSchema = Type.Object(
+  {
+    kind: Type.Union([Type.Literal("overall"), Type.Literal("dimension"), Type.Literal("rule")]),
+    metricKey: Type.String(),
+    metricName: Type.String(),
+    score: Type.Number(),
+    minScore: Type.Number(),
+    maxScore: Type.Number(),
+    normalizedScore: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    passed: Type.Union([Type.Boolean(), Type.Null()]),
+    confidence: Type.Union([Type.Number({ minimum: 0, maximum: 1 }), Type.Null()]),
+    rationale: NullableTextSchema,
+    evidence: Type.Unknown(),
+  },
+  { additionalProperties: false },
+);
+export const ExperimentCaseResultSchema = Type.Object(
+  {
+    promptVersionId: UuidSchema,
+    generationRunId: Type.Union([UuidSchema, Type.Null()]),
+    evaluationRunId: Type.Union([UuidSchema, Type.Null()]),
+    model: NullableTextSchema,
+    evaluationStatus: Type.Union([EvaluationRunStatusSchema, Type.Null()]),
+    failureCode: NullableTextSchema,
+    failureMessage: NullableTextSchema,
+    output: Type.Union([
+      Type.Object(
+        {
+          status: Type.Union([
+            Type.Literal("pending"),
+            Type.Literal("succeeded"),
+            Type.Literal("failed"),
+            Type.Literal("skipped"),
+          ]),
+          outputText: NullableTextSchema,
+          errorCode: NullableTextSchema,
+          errorMessage: NullableTextSchema,
+        },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
+    scores: Type.Array(CaseScoreSchema),
+  },
+  { additionalProperties: false },
+);
+export const ExperimentCasePageSchema = Type.Object(
+  {
+    experimentId: UuidSchema,
+    repetition: Type.Integer({ minimum: 1, maximum: 100 }),
+    offset: Type.Integer({ minimum: 0 }),
+    limit: Type.Integer({ minimum: 1, maximum: 20 }),
+    total: Type.Integer({ minimum: 0 }),
+    promptVersions: Type.Array(ExperimentPromptVersionSchema, { maxItems: 20 }),
+    items: Type.Array(
+      Type.Object(
+        {
+          caseId: UuidSchema,
+          caseKey: Type.String(),
+          name: NullableTextSchema,
+          input: Type.Unknown(),
+          expectedOutput: Type.Unknown(),
+          results: Type.Array(ExperimentCaseResultSchema, { maxItems: 20 }),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 20 },
+    ),
+  },
+  { additionalProperties: false },
+);
+export type ExperimentCasePage = Static<typeof ExperimentCasePageSchema>;
+export type ExperimentCaseResult = Static<typeof ExperimentCaseResultSchema>;
+export type CaseScore = Static<typeof CaseScoreSchema>;
+
 export type Project = Static<typeof ProjectSchema>;
 export type CreateProject = Static<typeof CreateProjectSchema>;
 export type Prompt = Static<typeof PromptSchema>;

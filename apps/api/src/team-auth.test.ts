@@ -12,6 +12,7 @@ import { buildApp } from "./app.js";
 import type { CatalogService } from "./catalog-service.js";
 import type { DatasetService } from "./dataset-service.js";
 import type { TeamAuth } from "./team-auth.js";
+import type { ExperimentService } from "./experiment-service.js";
 
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -96,6 +97,15 @@ async function fixture(role: ProjectRole = "owner", isAdmin = false) {
   const review = vi
     .fn<DatasetService["reviewVersion"]>()
     .mockRejectedValue(new Error("test handler reached"));
+  const cases = vi.fn<ExperimentService["cases"]>().mockResolvedValue({
+    experimentId: ownResource,
+    offset: 0,
+    limit: 5,
+    repetition: 1,
+    total: 0,
+    promptVersions: [],
+    items: [],
+  });
   const app = await buildApp({
     catalog,
     teamAuth: team,
@@ -105,6 +115,7 @@ async function fixture(role: ProjectRole = "owner", isAdmin = false) {
     docsEnabled: false,
     rateLimitMax: 1000,
     datasetService: { reviewVersion: review } as unknown as DatasetService,
+    experimentService: { cases } as unknown as ExperimentService,
   });
   apps.push(app);
   return {
@@ -117,11 +128,35 @@ async function fixture(role: ProjectRole = "owner", isAdmin = false) {
     foreignResource,
     user,
     review,
+    cases,
     headers: { authorization: "Bearer session-token" },
   };
 }
 
 describe("team API authorization", () => {
+  it("allows a viewer to read case evidence but denies foreign projects and mixed experiment paths", async () => {
+    const { app, projectId, foreignProjectId, ownResource, foreignResource, headers, cases } =
+      await fixture("viewer");
+    const ownPath = `/v1/projects/${projectId}/experiments/${ownResource}/cases`;
+    expect((await app.inject({ method: "GET", url: ownPath })).statusCode).toBe(401);
+    expect((await app.inject({ method: "GET", url: ownPath, headers })).statusCode).toBe(200);
+    expect(cases).toHaveBeenCalledOnce();
+    for (const [project, experiment] of [
+      [foreignProjectId, foreignResource],
+      [projectId, foreignResource],
+    ]) {
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: `/v1/projects/${project}/experiments/${experiment}/cases`,
+            headers,
+          })
+        ).statusCode,
+      ).toBe(404);
+    }
+    expect(cases).toHaveBeenCalledOnce();
+  });
   it("lets owners add registered accounts by email without exposing the user directory", async () => {
     const { app, team, user, projectId, headers } = await fixture();
     const response = await app.inject({

@@ -259,6 +259,28 @@ try {
     assert.equal(detail.progress.completedCaseExecutions, 16);
     await resources.fits("comparison results");
   });
+  await check("inspect real paired case evidence and paginate in a narrow browser", async () => {
+    await page.getByRole("button", { name: "查看逐条用例证据", exact: true }).click();
+    const evidence = page.getByRole("region", { name: "逐条用例证据", exact: true });
+    await expect(evidence.getByRole("status")).toContainText("当前显示 1～5 条");
+    await evidence.locator(".case-evidence__case > summary").first().click();
+    await expect(evidence.getByText("target-reviewed-0", { exact: true })).toBeVisible();
+    const baseline = evidence.getByRole("region", { name: "基线版本的用例结果", exact: true });
+    const candidate = evidence.getByRole("region", { name: "候选版本的用例结果", exact: true });
+    await expect(baseline.getByText("综合评分：100.0%", { exact: true })).toBeVisible();
+    await expect(candidate.getByText("综合评分：0.0%", { exact: true })).toBeVisible();
+    await expect(
+      candidate.getByText("评分理由：Deterministic fixture score", { exact: true }),
+    ).toBeVisible();
+    await resources.fits("expanded case evidence");
+    await evidence.getByRole("button", { name: "下一页用例", exact: true }).click();
+    await expect(evidence.getByRole("status")).toContainText("当前显示 6～8 条");
+    await expect(evidence.getByRole("button", { name: "下一页用例", exact: true })).toBeDisabled();
+    await evidence.getByRole("button", { name: "上一页用例", exact: true }).click();
+    await expect(evidence.getByRole("status")).toContainText("当前显示 1～5 条");
+    await page.getByRole("button", { name: "收起逐条用例证据", exact: true }).click();
+    await expect(evidence).toHaveCount(0);
+  });
   await check(
     "a temporary comparison failure shows a recoverable error, not a stuck screen",
     async () => {

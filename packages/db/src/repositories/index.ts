@@ -5,6 +5,7 @@ export * from "./evaluation-dispatches.js";
 export * from "./evaluations.js";
 export * from "./experiment-diagnoses.js";
 export * from "./experiments.js";
+export * from "./experiment-cases.js";
 export * from "./frameworks.js";
 export * from "./model-connections.js";
 export * from "./identity.js";

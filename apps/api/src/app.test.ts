@@ -439,7 +439,16 @@ describe("API", () => {
     };
     const compare = vi.fn(() => Promise.resolve(comparison));
     const cancel = vi.fn(() => Promise.resolve({ ...experiment, status: "cancelled" as const }));
-    const service: ExperimentService = { list, get, compare, create, start, cancel };
+    const cases = vi.fn<ExperimentService["cases"]>().mockResolvedValue({
+      experimentId,
+      repetition: 1,
+      offset: 0,
+      limit: 5,
+      total: 0,
+      promptVersions: [],
+      items: [],
+    });
+    const service: ExperimentService = { list, get, compare, cases, create, start, cancel };
     const app = await buildTestApp(
       new TestCatalog(),
       new RecordingDiagnosisEngine(),
@@ -526,6 +535,30 @@ describe("API", () => {
     expect(compared.statusCode).toBe(200);
     expect(compared.json()).toEqual(comparison);
     expect(compare).toHaveBeenCalledWith(projectId, experimentId);
+    const casePath = `/v1/projects/${projectId}/experiments/${experimentId}/cases`;
+    const evidence = await app.inject({ method: "GET", url: casePath });
+    expect(evidence.statusCode).toBe(200);
+    expect(cases).toHaveBeenLastCalledWith(projectId, experimentId, {
+      offset: 0,
+      limit: 5,
+      repetition: 1,
+    });
+    for (const query of ["limit=21", "offset=-1", "repetition=0", "limit=1.5", "limit=all"]) {
+      expect((await app.inject({ method: "GET", url: `${casePath}?${query}` })).statusCode).toBe(
+        400,
+      );
+    }
+    expect(cases).toHaveBeenCalledOnce();
+    const pageTwo = await app.inject({
+      method: "GET",
+      url: `${casePath}?offset=5&limit=2&repetition=2`,
+    });
+    expect(pageTwo.statusCode, pageTwo.body).toBe(200);
+    expect(cases).toHaveBeenLastCalledWith(projectId, experimentId, {
+      offset: 5,
+      limit: 2,
+      repetition: 2,
+    });
     await app.close();
   });
 

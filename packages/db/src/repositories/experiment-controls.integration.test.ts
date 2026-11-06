@@ -16,6 +16,8 @@ import {
   evaluationRuns,
   experiments,
   generationRuns,
+  generationOutputs,
+  scores,
   projects,
   prompts,
   type PromptBlock,
@@ -23,6 +25,7 @@ import {
 import { hashVersionContent } from "../versioning.js";
 import { createEvaluationRepository } from "./evaluations.js";
 import { createExperimentRepository } from "./experiments.js";
+import { createExperimentCaseRepository } from "./experiment-cases.js";
 import { createPromptRepository } from "./prompts.js";
 import { createModelConnectionRepository } from "./model-connections.js";
 
@@ -117,7 +120,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("experiment execution controls",
           evaluatorOutputUsdPerMillionTokens: 2,
         },
       });
-    return { projectId, first, second, repository, start };
+    return { projectId, first, second, repository, start, datasetVersionId };
   }
 
   async function isolated(test: (data: Awaited<ReturnType<typeof fixture>>) => Promise<void>) {
@@ -129,6 +132,92 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("experiment execution controls",
       await client.db.delete(projects).where(eq(projects.id, data.projectId));
     }
   }
+
+  it("pages evidence without dropping missing/failed answers or disclosing raw provider data", async () => {
+    await isolated(async ({ projectId, first, start, datasetVersionId }) => {
+      for (let i = 1; i <= 2; i++)
+        await client.db.insert(evaluationCases).values({
+          datasetVersionId,
+          caseKey: `extra-${i}`,
+          input: `question-${i}`,
+          sortOrder: i,
+          contentHash: hashVersionContent({ i }),
+        });
+      await client.db
+        .update(datasetVersions)
+        .set({ caseCount: 3 })
+        .where(eq(datasetVersions.id, datasetVersionId));
+      const reader = createExperimentCaseRepository(client.db);
+      const query = { offset: 0, limit: 2, repetition: 1 };
+      const before = await reader.list(projectId, first.id, query);
+      expect(before?.total).toBe(3);
+      expect(before?.items).toHaveLength(2);
+      expect(
+        before?.items.every((item) =>
+          item.results.every((r) => r.output === null && r.scores.length === 0),
+        ),
+      ).toBe(true);
+      expect(await reader.list(randomUUID(), first.id, query)).toBeNull();
+      await expect(reader.list(projectId, first.id, { ...query, repetition: 2 })).rejects.toThrow(
+        "not part",
+      );
+      await start(first.id);
+      const [run] = await client.db
+        .select()
+        .from(evaluationRuns)
+        .where(eq(evaluationRuns.experimentId, first.id));
+      const firstCase = before!.items[0]!;
+      const secondCase = before!.items[1]!;
+      await client.db.insert(generationOutputs).values({
+        generationRunId: run!.generationRunId,
+        caseId: firstCase.caseId,
+        status: "failed",
+        errorCode: "PROVIDER_TIMEOUT",
+        errorMessage: "Timed out",
+        request: { secret: "must-not-disclose" },
+        rawResponse: { private: "must-not-disclose" },
+      });
+      const [output] = await client.db
+        .insert(generationOutputs)
+        .values({
+          generationRunId: run!.generationRunId,
+          caseId: secondCase.caseId,
+          status: "succeeded",
+          outputText: "an answer",
+        })
+        .returning();
+      await client.db.insert(scores).values({
+        evaluationRunId: run!.id,
+        generationOutputId: output!.id,
+        kind: "overall",
+        metricKey: "__overall__",
+        score: 0,
+        minScore: 0,
+        maxScore: 1,
+        normalizedScore: 0,
+        passed: false,
+        rationale: "Wrong answer",
+        evidence: ["an answer"],
+        rawResult: { secret: "must-not-disclose" },
+      });
+      const after = await reader.list(projectId, first.id, query);
+      expect(after?.items[0]?.results[0]?.output?.errorCode).toBe("PROVIDER_TIMEOUT");
+      expect(after?.items[0]?.results[0]?.scores).toEqual([]);
+      expect(after?.items[1]?.results[0]?.scores[0]).toMatchObject({
+        normalizedScore: 0,
+        rationale: "Wrong answer",
+        metricName: "综合分",
+      });
+      expect(JSON.stringify(after)).not.toMatch(
+        /must-not-disclose|rawResponse|rawResult|"request"/u,
+      );
+      const last = await reader.list(projectId, first.id, { ...query, offset: 2 });
+      expect(last?.items).toHaveLength(1);
+      expect(last?.items[0]?.results[0]?.output).toBeNull();
+      expect(new Set([...after!.items, ...last!.items].map((item) => item.caseId)).size).toBe(3);
+      expect((await reader.list(projectId, first.id, { ...query, offset: 3 }))?.items).toEqual([]);
+    });
+  });
 
   it("serializes project admission and permits a new start after cancellation", async () => {
     await isolated(async ({ projectId, first, second, repository, start }) => {

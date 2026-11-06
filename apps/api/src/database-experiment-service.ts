@@ -3,6 +3,7 @@ import {
   EntityNotFoundError,
   RepositoryConflictError,
   createExperimentRepository,
+  createExperimentCaseRepository,
   type Database,
   type ExperimentDetailRecord,
   type JsonValue,
@@ -42,7 +43,19 @@ export function createDatabaseExperimentService(
   options: { readonly maxActiveExperimentsPerProject?: number } = {},
 ): ExperimentService {
   const experiments = createExperimentRepository(db, options);
+  const cases = createExperimentCaseRepository(db);
   return {
+    async cases(projectId, experimentId, query) {
+      try {
+        const page = await cases.list(projectId, experimentId, query);
+        if (!page) throw new ApiError(404, "NOT_FOUND", `Experiment not found: ${experimentId}`);
+        return page;
+      } catch (error) {
+        if (error instanceof TypeError)
+          throw new ApiError(422, "INVALID_CASE_QUERY", error.message);
+        throw error;
+      }
+    },
     async list(projectId) {
       return (await experiments.listByProject(projectId)).map(dto);
     },

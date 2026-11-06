@@ -22,6 +22,7 @@ import type {
   Experiment,
   ExperimentDetail,
   ExperimentComparison,
+  ExperimentCasePage,
   CreateExperiment,
   StartExperiment,
   StartedExperiment,
@@ -399,6 +400,24 @@ export const api = {
   ): Promise<ExperimentComparison> {
     return unwrapEntity(
       await request(`${experimentPath(projectId, id)}/comparison`, signal ? { signal } : {}),
+    );
+  },
+  async listExperimentCases(
+    projectId: string,
+    id: string,
+    query: { offset: number; limit: number; repetition: number },
+    signal?: AbortSignal,
+  ): Promise<ExperimentCasePage> {
+    const params = new URLSearchParams({
+      offset: String(query.offset),
+      limit: String(query.limit),
+      repetition: String(query.repetition),
+    });
+    return unwrapEntity(
+      await request(
+        `${experimentPath(projectId, id)}/cases?${params.toString()}`,
+        signal ? { signal } : {},
+      ),
     );
   },
   async diagnoseExperiment(

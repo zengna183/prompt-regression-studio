@@ -2,6 +2,8 @@ import {
   CreateExperimentSchema,
   ExperimentDetailSchema,
   ExperimentComparisonSchema,
+  ExperimentCasePageSchema,
+  ExperimentCaseQuerySchema,
   ExperimentSchema,
   StartExperimentSchema,
   StartedExperimentSchema,
@@ -23,6 +25,31 @@ export function experimentRoutes(
   service: ExperimentService | undefined,
 ): FastifyPluginAsyncTypebox {
   return (app) => {
+    app.get(
+      "/v1/projects/:projectId/experiments/:experimentId/cases",
+      {
+        schema: {
+          tags: ["experiments"],
+          summary: "Inspect a bounded page of paired case evidence for one repetition",
+          params: ExperimentParams,
+          querystring: ExperimentCaseQuerySchema,
+          response: { 200: ExperimentCasePageSchema },
+        },
+      },
+      async (request) => {
+        if (!service)
+          throw new ApiError(
+            503,
+            "EXPERIMENTS_UNAVAILABLE",
+            "Experiment queries are not configured.",
+          );
+        return service.cases(request.params.projectId, request.params.experimentId, {
+          offset: Number(request.query.offset ?? "0"),
+          limit: Number(request.query.limit ?? "5"),
+          repetition: Number(request.query.repetition ?? "1"),
+        });
+      },
+    );
     app.get(
       "/v1/projects/:projectId/experiments",
       {

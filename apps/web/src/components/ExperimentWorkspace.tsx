@@ -12,6 +12,7 @@ import { ExperimentCreate, ExperimentStart } from "./ExperimentForms";
 import { DiagnosisReportView } from "./DiagnosisReport";
 import type { DiagnosisReport } from "../diagnosis/types";
 import { useProjectAccess } from "./ProjectAccess";
+import { ExperimentCases } from "./ExperimentCases";
 
 export const runStatusLabels: Record<string, string> = {
   draft: "草稿",
@@ -119,6 +120,7 @@ function ExperimentView({
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [blockId, setBlockId] = useState("");
   const [replayConfirmed, setReplayConfirmed] = useState(false);
+  const [showCases, setShowCases] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -286,6 +288,24 @@ function ExperimentView({
       )}
       {comparison && detail.experiment.status !== "draft" && (
         <ComparisonView comparison={comparison} />
+      )}
+      {detail.experiment.status !== "draft" && (
+        <>
+          <button
+            className="button button--secondary"
+            aria-expanded={showCases}
+            onClick={() => setShowCases(!showCases)}
+          >
+            {showCases ? "收起逐条用例证据" : "查看逐条用例证据"}
+          </button>
+          {showCases && (
+            <ExperimentCases
+              projectId={projectId}
+              experimentId={experimentId}
+              repetitions={detail.experiment.repetitions}
+            />
+          )}
+        </>
       )}
       {detail.experiment.status === "succeeded" && (
         <section className="flow-card flow-form">

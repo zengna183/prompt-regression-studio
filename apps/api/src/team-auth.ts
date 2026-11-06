@@ -47,6 +47,7 @@ const projectSuffixes = new Set([
   "experiments",
   "experiments/:experimentId",
   "experiments/:experimentId/comparison",
+  "experiments/:experimentId/cases",
   "experiments/:experimentId/start",
   "experiments/:experimentId/cancel",
   "experiments/:experimentId/diagnoses",

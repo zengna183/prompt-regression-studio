@@ -111,6 +111,38 @@
 .flow-wrap {
   overflow-wrap: anywhere;
 }
+.case-evidence__case {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.case-evidence__case > summary {
+  cursor: pointer;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.case-evidence__versions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 1rem;
+  min-width: 0;
+}
+.case-evidence__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.7rem;
+  border-radius: 6px;
+  background: #f4f6f7;
+}
+.case-evidence__score {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border-top: 1px solid var(--line);
+}
 .flow-steps {
   display: grid;
   gap: 1rem;

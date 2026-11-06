@@ -364,6 +364,39 @@ try {
       assert.equal(runs.count, 2);
     },
   );
+  await check(
+    "bounded case evidence preserves paired answers, missing scores and project isolation",
+    async () => {
+      const first = await http("GET", `${expPath(happy.id)}/cases?limit=3`);
+      assert.equal(first.total, 8);
+      assert.equal(first.items.length, 3);
+      assert(first.items.every((c) => c.results.length === 2));
+      assert(
+        first.items.every((c) =>
+          c.results.every((r) => r.output.status === "succeeded" && r.scores.length === 2),
+        ),
+      );
+      const next = await http("GET", `${expPath(happy.id)}/cases?offset=3&limit=5`);
+      assert.equal(new Set([...first.items, ...next.items].map((c) => c.caseId)).size, 8);
+      assert(!JSON.stringify(first).match(/"rawResponse"|"request"|"rawResult"|"apiKey"/u));
+      await http("GET", `${expPath(happy.id)}/cases?limit=21`, undefined, 400);
+      await http("GET", `${expPath(happy.id)}/cases?repetition=2`, undefined, 422);
+      const other = await http(
+        "POST",
+        "/v1/projects",
+        { slug: "other-evidence", name: "Other evidence project" },
+        201,
+      );
+      await http("GET", `/v1/projects/${other.id}/experiments/${happy.id}/cases`, undefined, 404);
+      const draft = await plan("Not executed evidence", faultDataset);
+      const missing = await http("GET", `${expPath(draft.id)}/cases`);
+      assert(
+        missing.items.every((c) =>
+          c.results.every((r) => r.output === null && r.scores.length === 0),
+        ),
+      );
+    },
+  );
   const diagnose = (includeAblations = false) =>
     http("POST", `${expPath(happy.id)}/diagnoses`, {
       candidatePromptVersionId: candidate.id,
@@ -427,6 +460,12 @@ try {
       const comparison = await http("GET", `${expPath(experiment.id)}/comparison`);
       assert.equal(comparison.isComplete, false);
       assert(comparison.versions.every((v) => v.observationCount === 0));
+      const evidence = await http("GET", `${expPath(experiment.id)}/cases`);
+      assert(
+        evidence.items.every((c) =>
+          c.results.every((r) => r.output.status === "failed" && r.scores.length === 0),
+        ),
+      );
     });
   }
   await check("cancel during an outstanding model request remains terminal", async () => {
@@ -517,6 +556,13 @@ try {
       assert(report.load.maxMs < 30_000, "HTTP exceeded the test watchdog, not a production SLA");
       const comparison = await assertSuccess(experiment.id, 48);
       assert.equal(comparison.expectedObservationsPerVersion, 24);
+      const evidence = await http("GET", `${expPath(experiment.id)}/cases?repetition=3`);
+      const runIds = new Set(
+        evidence.items.flatMap((c) => c.results.map((r) => r.generationRunId)),
+      );
+      const [count] =
+        await database.sql`select count(*)::int as n from generation_runs where experiment_id=${experiment.id} and repetition=3 and id in ${database.sql([...runIds])}`;
+      assert.equal(count.n, 2, "Evidence must not mix repetitions");
       const [outputs] =
         await database.sql`select count(*)::int as count from generation_outputs o join generation_runs r on r.id=o.generation_run_id where r.experiment_id=${experiment.id}`;
       assert.equal(outputs.count, 48);
